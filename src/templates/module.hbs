@@ -1,0 +1,15 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { {{pascalCase name}}Controller } from '../controllers/{{kebabCase name}}.controller';
+import { {{pascalCase name}}Service } from '../services/{{kebabCase name}}.service';
+import { {{pascalCase name}}Entity } from '../models/entities/{{kebabCase name}}.entity';
+import { HashIdService } from '../services/hash-id.service';
+import { EventPublisherService } from '../events/event-publisher.service';
+
+@Module({
+  imports: [TypeOrmModule.forFeature([{{pascalCase name}}Entity])],
+  controllers: [{{pascalCase name}}Controller],
+  providers: [{{pascalCase name}}Service, HashIdService, EventPublisherService],
+  exports: [{{pascalCase name}}Service],
+})
+export class {{pascalCase name}}Module {}

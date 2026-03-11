@@ -1,0 +1,33 @@
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+
+@Injectable()
+export class JwtAuthGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const isPublic = this.reflector.get<boolean>(
+      'isPublic',
+      context.getHandler(),
+    );
+    if (isPublic) {
+      return true;
+    }
+
+    const request = context.switchToHttp().getRequest();
+    const authHeader = request.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw new UnauthorizedException('Missing or invalid authorization token');
+    }
+
+    // Token validation is handled by the JWT strategy
+    // This guard ensures the header is present
+    return true;
+  }
+}

@@ -1,0 +1,64 @@
+import { Injectable, Logger } from '@nestjs/common';
+
+/**
+ * Event naming convention: domain.entity.action
+ * Examples: identity.user.created, policy.claim.submitted
+ *
+ * Events follow the canonical Zorbit event envelope.
+ */
+export interface ZorbitEvent {
+  eventId: string;
+  eventType: string;
+  timestamp: string;
+  source: string;
+  namespace: {
+    scope: 'G' | 'O' | 'D' | 'U';
+    id: string;
+  };
+  payload: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+@Injectable()
+export class EventPublisherService {
+  private readonly logger = new Logger(EventPublisherService.name);
+
+  /**
+   * Publish an event to the messaging system.
+   * In production, this connects to Kafka.
+   * Currently logs events for development purposes.
+   */
+  async publish(event: ZorbitEvent): Promise<void> {
+    this.logger.log(
+      `Publishing event: ${event.eventType} [${event.eventId}]`,
+    );
+
+    // TODO: Integrate with Kafka via @zorbit-platform/sdk-node
+    // const kafka = new KafkaClient(config.kafka);
+    // await kafka.produce(event.eventType, event);
+
+    this.logger.debug(JSON.stringify(event, null, 2));
+  }
+
+  /**
+   * Create a standard event envelope.
+   */
+  createEvent(
+    eventType: string,
+    namespaceScope: 'G' | 'O' | 'D' | 'U',
+    namespaceId: string,
+    payload: Record<string, unknown>,
+  ): ZorbitEvent {
+    return {
+      eventId: `EV-${Math.random().toString(16).slice(2, 6).toUpperCase()}`,
+      eventType,
+      timestamp: new Date().toISOString(),
+      source: '{{serviceName}}',
+      namespace: {
+        scope: namespaceScope,
+        id: namespaceId,
+      },
+      payload,
+    };
+  }
+}

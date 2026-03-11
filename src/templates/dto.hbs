@@ -1,0 +1,14 @@
+import { IsString, IsOptional, IsBoolean } from 'class-validator';
+
+export class Create{{pascalCase name}}Dto {
+  @IsString()
+  name: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
+}

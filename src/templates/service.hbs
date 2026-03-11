@@ -1,0 +1,102 @@
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { {{pascalCase name}}Entity } from '../models/entities/{{kebabCase name}}.entity';
+import { Create{{pascalCase name}}Dto } from '../models/dto/create-{{kebabCase name}}.dto';
+import { HashIdService } from './hash-id.service';
+import { EventPublisherService } from '../events/event-publisher.service';
+
+@Injectable()
+export class {{pascalCase name}}Service {
+  private readonly logger = new Logger({{pascalCase name}}Service.name);
+
+  constructor(
+    @InjectRepository({{pascalCase name}}Entity)
+    private readonly repository: Repository<{{pascalCase name}}Entity>,
+    private readonly hashIdService: HashIdService,
+    private readonly eventPublisher: EventPublisherService,
+  ) {}
+
+  async create({{#if (eq namespaceScope 'O')}}orgId: string, {{/if}}{{#if (eq namespaceScope 'D')}}orgId: string, deptId: string, {{/if}}{{#if (eq namespaceScope 'U')}}userId: string, {{/if}}dto: Create{{pascalCase name}}Dto): Promise<{{pascalCase name}}Entity> {
+    const hashId = this.hashIdService.generate('{{hashPrefix}}');
+
+    const entity = this.repository.create({
+      ...dto,
+      hashId,
+      {{#if (eq namespaceScope 'O')}}orgId,{{/if}}
+      {{#if (eq namespaceScope 'D')}}orgId,
+      deptId,{{/if}}
+      {{#if (eq namespaceScope 'U')}}userId,{{/if}}
+    });
+
+    const saved = await this.repository.save(entity);
+
+    await this.eventPublisher.publish(
+      this.eventPublisher.createEvent(
+        '{{kebabCase name}}.{{kebabCase name}}.created',
+        '{{namespaceScope}}',
+        {{#if (eq namespaceScope 'O')}}orgId{{/if}}{{#if (eq namespaceScope 'D')}}orgId{{/if}}{{#if (eq namespaceScope 'U')}}userId{{/if}}{{#if (eq namespaceScope 'G')}}'global'{{/if}},
+        { hashId: saved.hashId },
+      ),
+    );
+
+    this.logger.log(`Created {{name}} with hashId: ${hashId}`);
+    return saved;
+  }
+
+  async findAll({{#if (eq namespaceScope 'O')}}orgId: string, {{/if}}{{#if (eq namespaceScope 'D')}}orgId: string, deptId: string, {{/if}}{{#if (eq namespaceScope 'U')}}userId: string, {{/if}}page = 1, limit = 20): Promise<{ data: {{pascalCase name}}Entity[]; total: number }> {
+    const [data, total] = await this.repository.findAndCount({
+      where: {
+        {{#if (eq namespaceScope 'O')}}orgId,{{/if}}
+        {{#if (eq namespaceScope 'D')}}orgId, deptId,{{/if}}
+        {{#if (eq namespaceScope 'U')}}userId,{{/if}}
+      },
+      skip: (page - 1) * limit,
+      take: limit,
+      order: { createdAt: 'DESC' },
+    });
+
+    return { data, total };
+  }
+
+  async findOne(hashId: string): Promise<{{pascalCase name}}Entity> {
+    const entity = await this.repository.findOne({ where: { hashId } });
+    if (!entity) {
+      throw new NotFoundException(`{{pascalCase name}} not found: ${hashId}`);
+    }
+    return entity;
+  }
+
+  async update(hashId: string, dto: Create{{pascalCase name}}Dto): Promise<{{pascalCase name}}Entity> {
+    const entity = await this.findOne(hashId);
+    Object.assign(entity, dto);
+    const saved = await this.repository.save(entity);
+
+    await this.eventPublisher.publish(
+      this.eventPublisher.createEvent(
+        '{{kebabCase name}}.{{kebabCase name}}.updated',
+        '{{namespaceScope}}',
+        {{#if (eq namespaceScope 'O')}}entity.orgId{{/if}}{{#if (eq namespaceScope 'D')}}entity.orgId{{/if}}{{#if (eq namespaceScope 'U')}}entity.userId{{/if}}{{#if (eq namespaceScope 'G')}}'global'{{/if}},
+        { hashId: saved.hashId },
+      ),
+    );
+
+    return saved;
+  }
+
+  async remove(hashId: string): Promise<void> {
+    const entity = await this.findOne(hashId);
+    await this.repository.remove(entity);
+
+    await this.eventPublisher.publish(
+      this.eventPublisher.createEvent(
+        '{{kebabCase name}}.{{kebabCase name}}.deleted',
+        '{{namespaceScope}}',
+        {{#if (eq namespaceScope 'O')}}entity.orgId{{/if}}{{#if (eq namespaceScope 'D')}}entity.orgId{{/if}}{{#if (eq namespaceScope 'U')}}entity.userId{{/if}}{{#if (eq namespaceScope 'G')}}'global'{{/if}},
+        { hashId },
+      ),
+    );
+
+    this.logger.log(`Deleted {{name}} with hashId: ${hashId}`);
+  }
+}

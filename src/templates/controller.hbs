@@ -1,0 +1,82 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
+import { JwtAuthGuard } from '../middleware/jwt-auth.guard';
+import { NamespaceGuard } from '../middleware/namespace.guard';
+import { {{pascalCase name}}Service } from '../services/{{kebabCase name}}.service';
+import { Create{{pascalCase name}}Dto } from '../models/dto/create-{{kebabCase name}}.dto';
+
+@Controller('{{namespaceRoute}}{{kebabCase name}}s')
+@UseGuards(JwtAuthGuard, NamespaceGuard)
+export class {{pascalCase name}}Controller {
+  constructor(private readonly {{camelCase name}}Service: {{pascalCase name}}Service) {}
+
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  async create(
+    {{#if (eq namespaceScope 'O')}}@Param('orgId') orgId: string,{{/if}}
+    {{#if (eq namespaceScope 'D')}}@Param('orgId') orgId: string,
+    @Param('deptId') deptId: string,{{/if}}
+    {{#if (eq namespaceScope 'U')}}@Param('userId') userId: string,{{/if}}
+    @Body() dto: Create{{pascalCase name}}Dto,
+  ) {
+    return this.{{camelCase name}}Service.create({{#if (eq namespaceScope 'O')}}orgId, {{/if}}{{#if (eq namespaceScope 'D')}}orgId, deptId, {{/if}}{{#if (eq namespaceScope 'U')}}userId, {{/if}}dto);
+  }
+
+  @Get()
+  async findAll(
+    {{#if (eq namespaceScope 'O')}}@Param('orgId') orgId: string,{{/if}}
+    {{#if (eq namespaceScope 'D')}}@Param('orgId') orgId: string,
+    @Param('deptId') deptId: string,{{/if}}
+    {{#if (eq namespaceScope 'U')}}@Param('userId') userId: string,{{/if}}
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.{{camelCase name}}Service.findAll({{#if (eq namespaceScope 'O')}}orgId, {{/if}}{{#if (eq namespaceScope 'D')}}orgId, deptId, {{/if}}{{#if (eq namespaceScope 'U')}}userId, {{/if}}page, limit);
+  }
+
+  @Get(':hashId')
+  async findOne(
+    {{#if (eq namespaceScope 'O')}}@Param('orgId') orgId: string,{{/if}}
+    {{#if (eq namespaceScope 'D')}}@Param('orgId') orgId: string,
+    @Param('deptId') deptId: string,{{/if}}
+    {{#if (eq namespaceScope 'U')}}@Param('userId') userId: string,{{/if}}
+    @Param('hashId') hashId: string,
+  ) {
+    return this.{{camelCase name}}Service.findOne(hashId);
+  }
+
+  @Put(':hashId')
+  async update(
+    {{#if (eq namespaceScope 'O')}}@Param('orgId') orgId: string,{{/if}}
+    {{#if (eq namespaceScope 'D')}}@Param('orgId') orgId: string,
+    @Param('deptId') deptId: string,{{/if}}
+    {{#if (eq namespaceScope 'U')}}@Param('userId') userId: string,{{/if}}
+    @Param('hashId') hashId: string,
+    @Body() dto: Create{{pascalCase name}}Dto,
+  ) {
+    return this.{{camelCase name}}Service.update(hashId, dto);
+  }
+
+  @Delete(':hashId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(
+    {{#if (eq namespaceScope 'O')}}@Param('orgId') orgId: string,{{/if}}
+    {{#if (eq namespaceScope 'D')}}@Param('orgId') orgId: string,
+    @Param('deptId') deptId: string,{{/if}}
+    {{#if (eq namespaceScope 'U')}}@Param('userId') userId: string,{{/if}}
+    @Param('hashId') hashId: string,
+  ) {
+    return this.{{camelCase name}}Service.remove(hashId);
+  }
+}

@@ -1,0 +1,103 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { {{pascalCase name}}Service } from '../src/services/{{kebabCase name}}.service';
+import { {{pascalCase name}}Entity } from '../src/models/entities/{{kebabCase name}}.entity';
+import { HashIdService } from '../src/services/hash-id.service';
+import { EventPublisherService } from '../src/events/event-publisher.service';
+
+describe('{{pascalCase name}}Service', () => {
+  let service: {{pascalCase name}}Service;
+  let repository: any;
+  let hashIdService: HashIdService;
+  let eventPublisher: EventPublisherService;
+
+  const mockRepository = {
+    create: jest.fn(),
+    save: jest.fn(),
+    findOne: jest.fn(),
+    findAndCount: jest.fn(),
+    remove: jest.fn(),
+  };
+
+  const mockHashIdService = {
+    generate: jest.fn().mockReturnValue('{{hashPrefix}}-A1B2'),
+    validate: jest.fn().mockReturnValue(true),
+  };
+
+  const mockEventPublisher = {
+    publish: jest.fn().mockResolvedValue(undefined),
+    createEvent: jest.fn().mockReturnValue({
+      eventId: 'EV-TEST',
+      eventType: 'test',
+      timestamp: new Date().toISOString(),
+      source: 'test',
+      namespace: { scope: '{{namespaceScope}}', id: 'test' },
+      payload: {},
+    }),
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        {{pascalCase name}}Service,
+        {
+          provide: getRepositoryToken({{pascalCase name}}Entity),
+          useValue: mockRepository,
+        },
+        {
+          provide: HashIdService,
+          useValue: mockHashIdService,
+        },
+        {
+          provide: EventPublisherService,
+          useValue: mockEventPublisher,
+        },
+      ],
+    }).compile();
+
+    service = module.get<{{pascalCase name}}Service>({{pascalCase name}}Service);
+    repository = module.get(getRepositoryToken({{pascalCase name}}Entity));
+    hashIdService = module.get<HashIdService>(HashIdService);
+    eventPublisher = module.get<EventPublisherService>(EventPublisherService);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should be defined', () => {
+    expect(service).toBeDefined();
+  });
+
+  describe('create', () => {
+    it('should create a new {{name}} with a hash ID', async () => {
+      const dto = { name: 'Test {{pascalCase name}}' };
+      const expected = { id: '1', hashId: '{{hashPrefix}}-A1B2', ...dto };
+
+      mockRepository.create.mockReturnValue(expected);
+      mockRepository.save.mockResolvedValue(expected);
+
+      const result = await service.create({{#if (eq namespaceScope 'O')}}'O-TEST', {{/if}}{{#if (eq namespaceScope 'D')}}'O-TEST', 'D-TEST', {{/if}}{{#if (eq namespaceScope 'U')}}'U-TEST', {{/if}}dto);
+
+      expect(result.hashId).toBe('{{hashPrefix}}-A1B2');
+      expect(mockHashIdService.generate).toHaveBeenCalledWith('{{hashPrefix}}');
+      expect(mockEventPublisher.publish).toHaveBeenCalled();
+    });
+  });
+
+  describe('findOne', () => {
+    it('should return a {{name}} by hashId', async () => {
+      const expected = { id: '1', hashId: '{{hashPrefix}}-A1B2', name: 'Test' };
+      mockRepository.findOne.mockResolvedValue(expected);
+
+      const result = await service.findOne('{{hashPrefix}}-A1B2');
+      expect(result).toEqual(expected);
+    });
+
+    it('should throw NotFoundException if not found', async () => {
+      mockRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.findOne('{{hashPrefix}}-ZZZZ')).rejects.toThrow();
+    });
+  });
+});

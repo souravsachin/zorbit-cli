@@ -1,0 +1,88 @@
+# Zorbit Service: {{serviceName}}
+
+## Purpose
+
+This repository implements the {{serviceName}} service for the Zorbit platform.
+
+Zorbit is a MACH-compliant shared platform infrastructure used to build enterprise applications.
+
+## Responsibilities
+
+Describe the responsibilities of this service.
+
+## Architecture Context
+
+This service follows Zorbit platform architecture.
+
+Key rules:
+
+- REST API grammar
+- namespace-based multi-tenancy
+- short hash identifiers
+- event-driven integration
+- service isolation
+
+## Dependencies
+
+Allowed dependencies:
+
+- infrastructure services
+- identity platform
+- messaging platform
+
+Forbidden dependencies:
+
+- direct database access to other services
+- cross-service code imports
+
+## Platform Dependencies
+
+Upstream services:
+- zorbit-identity (authentication)
+- zorbit-messaging (event publishing)
+
+Downstream consumers:
+- TBD
+
+## Repository Structure
+
+```
+/src
+  /api            - API route definitions
+  /controllers    - Request handlers
+  /services       - Business logic
+  /models         - Entities and DTOs
+  /events         - Event definitions and publishers
+  /middleware      - Guards and interceptors
+  /config         - Configuration files
+/tests            - Unit and integration tests
+```
+
+## Running Locally
+
+```bash
+npm install
+npm run start:dev
+```
+
+Or with Docker:
+
+```bash
+docker-compose up
+```
+
+## Events Published
+
+- TBD
+
+## Events Consumed
+
+- TBD
+
+## API Endpoints
+
+- TBD
+
+## Development Guidelines
+
+Follow Zorbit architecture rules.

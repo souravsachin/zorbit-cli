@@ -1,0 +1,50 @@
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
+
+/**
+ * Guard that enforces namespace isolation.
+ * Ensures the authenticated user has access to the requested namespace.
+ *
+ * Namespace scopes:
+ *   G - Global
+ *   O - Organization
+ *   D - Department
+ *   U - User
+ */
+@Injectable()
+export class NamespaceGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest();
+    const user = request.user;
+    const params = request.params;
+
+    if (!user) {
+      throw new ForbiddenException('User context is required');
+    }
+
+    // Check organization namespace
+    if (params.orgId && user.orgId !== params.orgId) {
+      throw new ForbiddenException(
+        'Access denied: organization namespace mismatch',
+      );
+    }
+
+    // Check department namespace
+    if (params.deptId && !user.departments?.includes(params.deptId)) {
+      throw new ForbiddenException(
+        'Access denied: department namespace mismatch',
+      );
+    }
+
+    // Check user namespace
+    if (params.userId && user.userId !== params.userId) {
+      throw new ForbiddenException('Access denied: user namespace mismatch');
+    }
+
+    return true;
+  }
+}
