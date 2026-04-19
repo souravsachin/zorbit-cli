@@ -159,7 +159,10 @@ function buildGuide(slug: string, name: string): Record<string, unknown> {
           title: 'Quick start (placeholder)',
           duration: 0,
           playerType: 'chapter-list',
-          src: '',
+          // MX-2094 validator requires src to be non-empty. Use a
+          // TODO-style URL pointing at the module's own /m route so the
+          // author sees where to replace it.
+          src: `/m/${slug}/guide/videos/TODO-quick-start.mp4`,
           poster: '',
           chapters: [],
         },
@@ -466,7 +469,11 @@ export function buildCompositionManifest(
     guide: buildGuide(input.slug, input.name),
 
     deployments: {
-      health: { beRoute: null },
+      // Composition modules have no backend of their own. MX-2094
+      // validator still requires a non-empty health.beRoute, so we
+      // point at the module-registry health endpoint — a composition
+      // module is "alive" as long as the registry can serve its manifest.
+      health: { beRoute: '/api/module-registry/api/v1/G/health' },
       build: {
         commitSha: 'placeholder-commit-sha',
         builtAt: new Date().toISOString(),
