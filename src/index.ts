@@ -6,6 +6,7 @@ import { createModuleCommand } from './commands/create-module';
 import { registerEventCommand } from './commands/register-event';
 import { registerPrivilegeCommand } from './commands/register-privilege';
 import { generateApiCommand } from './commands/generate-api';
+import { zmbCreateCommand } from './commands/zmb-create';
 
 const program = new Command();
 
@@ -19,5 +20,6 @@ createModuleCommand(program);
 registerEventCommand(program);
 registerPrivilegeCommand(program);
 generateApiCommand(program);
+zmbCreateCommand(program);
 
 program.parse(process.argv);

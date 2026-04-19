@@ -1,0 +1,930 @@
+#!/usr/bin/env node
+
+import { Command } from 'commander';
+import inquirer from 'inquirer';
+import * as path from 'path';
+import * as fs from 'fs-extra';
+import * as https from 'https';
+import * as http from 'http';
+import chalk from 'chalk';
+import Handlebars from 'handlebars';
+import {
+  buildManifestV2,
+  buildCompositionManifest,
+  VALID_SCAFFOLDS,
+  VALID_CATEGORIES,
+  ManifestBuildInput,
+  CompositionBuildInput,
+} from './zmb-manifest-v2';
+import { writeFile, ensureDirectory } from '../utils/file-utils';
+
+// ---------------------------------------------------------------------------
+// Handlebars helpers (same as template-engine but inline so zmb is self-contained)
+// ---------------------------------------------------------------------------
+
+Handlebars.registerHelper('eq', (a: unknown, b: unknown) => a === b);
+Handlebars.registerHelper('if_eq', function (this: unknown, a: unknown, b: unknown, options: Handlebars.HelperOptions) {
+  return a === b ? options.fn(this) : options.inverse(this);
+});
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type FetchStrategy = 'live_only' | 'static_only' | 'live_fallback';
+type ZmbType = 'app' | 'composition';
+
+interface ZmbConfig {
+  type: ZmbType;
+  slug: string;
+  name: string;
+  moduleName: string;
+  formBuilderId: string;
+  formBuilderToken: string;
+  skinSlug: string;
+  fetchStrategy: FetchStrategy;
+  cachingPreference: boolean;
+  description: string;
+  outputDir: string;
+  apiUrl?: string;
+  // v2 placement flags
+  scaffold?: string;
+  edition?: string;
+  category?: string;
+  capability?: string;
+  // composition-only flags
+  resources?: string[];
+  whitelabelId?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+function validateModuleName(name: string): true | string {
+  if (!name) return 'Module name is required';
+  if (!/^[a-z][a-z0-9_]*$/.test(name)) {
+    return 'Module name must be lowercase letters, digits, or underscores, starting with a letter (e.g. prospect_portal)';
+  }
+  if (name.includes('-')) {
+    return 'Use underscores, not hyphens (e.g. prospect_portal not prospect-portal)';
+  }
+  return true;
+}
+
+function validateSlug(slug: string): true | string {
+  if (!slug) return 'Slug is required';
+  if (!/^[a-z][a-z0-9_-]*$/.test(slug)) {
+    return 'Slug must be lowercase letters, digits, underscores, or hyphens, starting with a letter';
+  }
+  return true;
+}
+
+function parseResources(csv: string): string[] {
+  return csv
+    .split(',')
+    .map((r) => r.trim())
+    .filter((r) => r.length > 0);
+}
+
+// ---------------------------------------------------------------------------
+// Inline templates (backend scaffold files for --type=app)
+// ---------------------------------------------------------------------------
+
+const INLINE_TEMPLATES: Record<string, string> = {
+  'zmb/package.json': `{
+  "name": "{{fullModuleName}}",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.20.0",
+    "axios": "^1.6.0",
+    "zorbit-sdk-react": "file:../zorbit-sdk-react"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.2.0",
+    "typescript": "^5.3.0",
+    "vite": "^5.0.0"
+  }
+}`,
+
+  'zmb/tsconfig.json': `{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true
+  },
+  "include": ["src"]
+}`,
+
+  'zmb/vite.config.ts': `import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  server: { port: 3000 },
+});`,
+
+  'zmb/index.html': `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{displayName}}</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>`,
+
+  'zmb/.env.example': `VITE_FORM_BUILDER_URL=https://zorbit.scalatics.com
+VITE_FORM_BUILDER_TOKEN={{formBuilderToken}}
+VITE_WHITE_LABEL_URL=https://zorbit.scalatics.com
+VITE_DATATABLE_URL=https://zorbit.scalatics.com
+VITE_PII_VAULT_URL=https://zorbit.scalatics.com`,
+
+  'zmb/.gitignore': `node_modules/
+dist/
+.env
+*.local`,
+
+  'zmb/CLAUDE.md': `# Zorbit Module: {{fullModuleName}}
+
+Generated by \`zorbit zmb create --type=app\`.
+
+## Config
+
+| Setting | Value |
+|---------|-------|
+| Slug | {{slug}} |
+| Name | {{name}} |
+| Form Slug | {{formBuilderId}} |
+| Skin | {{skinSlug}} |
+| Fetch Strategy | {{fetchStrategy}} |
+| Type | {{moduleType}} |
+| Scaffold | {{scaffold}} |
+| Capability | {{capability}} |
+
+## Description
+
+{{description}}
+
+## Running
+
+\`\`\`bash
+npm install
+cp .env.example .env
+npm run dev
+\`\`\`
+
+## Manifest
+
+Review \`zorbit-module-manifest.json\` before registering the module with
+\`zorbit-cor-module_registry\`. All v2 sections (placement, navigation,
+guide, deployments, db) are generated as placeholders you must refine.
+
+## Events Published
+
+- {{moduleName}}.application.submitted
+- {{moduleName}}.application.updated
+`,
+
+  'zmb/src/main.tsx': `import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import './styles/globals.css';
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);`,
+
+  'zmb/src/App.tsx': `import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { WhiteLabelProvider } from 'zorbit-sdk-react';
+import Layout from './components/Layout';
+import FormPage from './pages/FormPage';
+import ListPage from './pages/ListPage';
+import { appConfig } from './config/app.config';
+
+export default function App() {
+  return (
+    <WhiteLabelProvider config={appConfig.theme}>
+      <BrowserRouter>
+        <Layout>
+          <Routes>
+            <Route path="/apply" element={<FormPage />} />
+            <Route path="/applications" element={<ListPage />} />
+            <Route path="*" element={<Navigate to="/apply" />} />
+          </Routes>
+        </Layout>
+      </BrowserRouter>
+    </WhiteLabelProvider>
+  );
+}`,
+
+  'zmb/src/config/app.config.ts': `export const appConfig = {
+  moduleName: '{{moduleName}}',
+  formBuilder: {
+    url: import.meta.env.VITE_FORM_BUILDER_URL || 'https://zorbit.scalatics.com',
+    formSlug: '{{formBuilderId}}',
+    token: import.meta.env.VITE_FORM_BUILDER_TOKEN || '{{formBuilderToken}}',
+    fetchStrategy: '{{fetchStrategy}}' as const,
+  },
+  theme: {
+    whiteLabelUrl: import.meta.env.VITE_WHITE_LABEL_URL || 'https://zorbit.scalatics.com',
+    skinSlug: '{{skinSlug}}',
+    fetchStrategy: '{{fetchStrategy}}' as const,
+  },
+  dataTable: {
+    url: import.meta.env.VITE_DATATABLE_URL || 'https://zorbit.scalatics.com',
+    pageConfig: '{{moduleName}}-submissions',
+  },
+  pii: {
+    resolveUrl: import.meta.env.VITE_PII_VAULT_URL || 'https://zorbit.scalatics.com',
+  },
+};`,
+
+  'zmb/src/pages/FormPage.tsx': `import { FormRenderer } from 'zorbit-sdk-react';
+import { appConfig } from '../config/app.config';
+{{#if hasStaticSchema}}
+import staticSchema from '../config/form-schema.static.json';
+{{/if}}
+
+export default function FormPage() {
+  const handleSubmit = async (data: Record<string, unknown>) => {
+    console.log('Form submitted:', data);
+    // TODO: POST to data sync endpoint
+  };
+
+  return (
+    <div className="max-w-3xl mx-auto py-8 px-4">
+      <h1 className="text-2xl font-bold mb-6">New Application</h1>
+      <FormRenderer
+        fetchStrategy="{{fetchStrategy}}"
+        formBuilderUrl={appConfig.formBuilder.url}
+        formSlug={appConfig.formBuilder.formSlug}
+        formToken={appConfig.formBuilder.token}
+        {{#if hasStaticSchema}}
+        staticSchema={staticSchema}
+        {{/if}}
+        onSubmit={handleSubmit}
+        onFallbackUsed={() => console.log('Using cached form schema')}
+        submitLabel="Submit Application"
+      />
+    </div>
+  );
+}`,
+
+  'zmb/src/pages/ListPage.tsx': `import { DataTable } from 'zorbit-sdk-react';
+import { appConfig } from '../config/app.config';
+
+export default function ListPage() {
+  return (
+    <div className="max-w-6xl mx-auto py-8 px-4">
+      <h1 className="text-2xl font-bold mb-6">My Applications</h1>
+      <DataTable
+        configId={appConfig.dataTable.pageConfig}
+        apiBaseUrl={appConfig.dataTable.url}
+      />
+    </div>
+  );
+}`,
+
+  'zmb/src/components/Layout.tsx': `import { ReactNode } from 'react';
+
+export default function Layout({ children }: { children: ReactNode }) {
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+          <h1 className="text-lg font-semibold">{{displayName}}</h1>
+          <nav className="flex gap-4">
+            <a href="/apply" className="text-sm text-gray-600 hover:text-gray-900">New Application</a>
+            <a href="/applications" className="text-sm text-gray-600 hover:text-gray-900">My Applications</a>
+          </nav>
+        </div>
+      </header>
+      <main>{children}</main>
+    </div>
+  );
+}`,
+
+  'zmb/src/components/FallbackIndicator.tsx': `interface FallbackIndicatorProps {
+  isUsingFallback: boolean;
+  label?: string;
+}
+
+export default function FallbackIndicator({ isUsingFallback, label = 'offline mode' }: FallbackIndicatorProps) {
+  if (!isUsingFallback) return null;
+  return (
+    <div className="mb-4 px-4 py-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
+      Using cached data ({label})
+    </div>
+  );
+}`,
+
+  'zmb/src/styles/globals.css': `*, *::before, *::after { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #111827;
+  background-color: #f9fafb;
+}
+a { color: #3b82f6; text-decoration: none; }
+a:hover { text-decoration: underline; }`,
+};
+
+function renderInline(key: string, context: Record<string, unknown>): string {
+  const source = INLINE_TEMPLATES[key];
+  if (!source) throw new Error(`No inline template for: ${key}`);
+  return Handlebars.compile(source)(context);
+}
+
+// ---------------------------------------------------------------------------
+// App-type local generation (backend scaffold + v2 manifest)
+// ---------------------------------------------------------------------------
+
+async function generateAppLocally(config: ZmbConfig): Promise<string> {
+  const {
+    slug,
+    name,
+    moduleName,
+    formBuilderId,
+    formBuilderToken,
+    skinSlug,
+    fetchStrategy,
+    description,
+    outputDir,
+    scaffold,
+    edition,
+    category,
+    capability,
+  } = config;
+
+  const fullModuleName = `zorbit-app-${moduleName}`;
+  const hasStaticSchema = fetchStrategy !== 'live_only';
+  const displayName = name;
+
+  const context: Record<string, unknown> = {
+    moduleName,
+    fullModuleName,
+    displayName,
+    slug,
+    name,
+    formBuilderId,
+    formBuilderToken,
+    skinSlug,
+    fetchStrategy,
+    moduleType: 'app',
+    hasStaticSchema,
+    description: description || `${displayName} business module`,
+    scaffold: scaffold || 'Business',
+    capability: capability || 'Generic',
+  };
+
+  const moduleDir = path.join(outputDir, fullModuleName);
+
+  const dirs = [
+    '',
+    'src',
+    'src/config',
+    'src/pages',
+    'src/components',
+    'src/hooks',
+    'src/styles',
+  ];
+  for (const dir of dirs) {
+    await ensureDirectory(path.join(moduleDir, dir));
+  }
+
+  const files: Array<[string, string]> = [
+    ['zmb/package.json', 'package.json'],
+    ['zmb/tsconfig.json', 'tsconfig.json'],
+    ['zmb/vite.config.ts', 'vite.config.ts'],
+    ['zmb/index.html', 'index.html'],
+    ['zmb/.env.example', '.env.example'],
+    ['zmb/.gitignore', '.gitignore'],
+    ['zmb/CLAUDE.md', 'CLAUDE.md'],
+    ['zmb/src/main.tsx', 'src/main.tsx'],
+    ['zmb/src/App.tsx', 'src/App.tsx'],
+    ['zmb/src/config/app.config.ts', 'src/config/app.config.ts'],
+    ['zmb/src/pages/FormPage.tsx', 'src/pages/FormPage.tsx'],
+    ['zmb/src/pages/ListPage.tsx', 'src/pages/ListPage.tsx'],
+    ['zmb/src/components/Layout.tsx', 'src/components/Layout.tsx'],
+    ['zmb/src/components/FallbackIndicator.tsx', 'src/components/FallbackIndicator.tsx'],
+    ['zmb/src/styles/globals.css', 'src/styles/globals.css'],
+  ];
+
+  for (const [templateKey, outputRel] of files) {
+    const content = renderInline(templateKey, context);
+    await writeFile(path.join(moduleDir, outputRel), content);
+  }
+
+  // v2-compliant manifest
+  const manifestInput: ManifestBuildInput = {
+    slug,
+    name,
+    moduleType: 'app',
+    description: (description || `${displayName} business module`) as string,
+    scaffold: scaffold as string,
+    edition,
+    category,
+    capability: capability as string,
+  };
+  const manifest = buildManifestV2(manifestInput);
+  await writeFile(
+    path.join(moduleDir, 'zorbit-module-manifest.json'),
+    JSON.stringify(manifest, null, 2),
+  );
+
+  // Write placeholder static files if needed
+  if (hasStaticSchema) {
+    const formSchemaPlaceholder = JSON.stringify(
+      {
+        _note: 'Replace with actual form schema from Form Builder',
+        display: 'form',
+        components: [],
+      },
+      null,
+      2,
+    );
+    await writeFile(
+      path.join(moduleDir, 'src/config/form-schema.static.json'),
+      formSchemaPlaceholder,
+    );
+
+    const themePlaceholder = JSON.stringify(
+      {
+        _note: 'Replace with actual theme from White Label service',
+        skinSlug,
+        colors: { primary: '#3B82F6', background: '#F9FAFB', text: '#111827' },
+      },
+      null,
+      2,
+    );
+    await writeFile(
+      path.join(moduleDir, 'src/config/theme.static.json'),
+      themePlaceholder,
+    );
+  }
+
+  return moduleDir;
+}
+
+// ---------------------------------------------------------------------------
+// Composition-type local generation (manifest only, no backend code)
+// ---------------------------------------------------------------------------
+
+async function generateCompositionLocally(config: ZmbConfig): Promise<string> {
+  const {
+    slug,
+    name,
+    description,
+    outputDir,
+    resources,
+    whitelabelId,
+    scaffold,
+    edition,
+    category,
+    capability,
+  } = config;
+
+  if (!resources || resources.length === 0) {
+    throw new Error('Composition mode requires --resources <csv>');
+  }
+  if (!whitelabelId) {
+    throw new Error('Composition mode requires --whitelabel-id <id>');
+  }
+
+  const moduleDirName = `zorbit-app-${slug.replace(/-/g, '_')}`;
+  const moduleDir = path.join(outputDir, moduleDirName);
+
+  await ensureDirectory(moduleDir);
+
+  const compInput: CompositionBuildInput = {
+    slug,
+    name,
+    description: description || `${name} composition-only module`,
+    scaffold: scaffold || 'Business',
+    edition,
+    category,
+    capability: capability || 'Generic',
+    whitelabelId,
+    resources,
+  };
+
+  const manifest = buildCompositionManifest(compInput);
+  await writeFile(
+    path.join(moduleDir, 'zorbit-module-manifest.json'),
+    JSON.stringify(manifest, null, 2),
+  );
+
+  // Also write a small CLAUDE.md so the directory is self-explanatory
+  const claudeMd = `# Composition Module: ${name}
+
+Generated by \`zorbit zmb create --type=composition\`.
+
+This module ships NO backend code. The unified-console orchestrates PFS
+SDKs (form_builder, datatable, doc_generator, white_label) against the
+IDs declared in \`zorbit-module-manifest.json\`.
+
+## Resources
+
+${resources.map((r) => `- ${r}`).join('\n')}
+
+## White-label
+
+${whitelabelId}
+
+## Next steps
+
+1. Replace each placeholder \`FRM-XXXX\`, \`DT-XXXX\` ID with the real
+   form_builder template ID and datatable page ID created in their
+   respective PFS admin consoles.
+2. Register this module via \`POST /api/module-registry/api/v1/G/modules\`.
+3. The module renders at \`/m/${slug}/...\` without any further code.
+`;
+  await writeFile(path.join(moduleDir, 'CLAUDE.md'), claudeMd);
+
+  return moduleDir;
+}
+
+// ---------------------------------------------------------------------------
+// Remote generation (delegate to ZMB Factory API) — unchanged legacy path
+// ---------------------------------------------------------------------------
+
+async function generateViaApi(config: ZmbConfig, token: string): Promise<void> {
+  const {
+    moduleName,
+    formBuilderId,
+    formBuilderToken,
+    skinSlug,
+    fetchStrategy,
+    cachingPreference,
+    description,
+    outputDir,
+    apiUrl,
+  } = config;
+
+  const orgId = process.env.ZORBIT_ORG_ID;
+  if (!orgId) {
+    throw new Error(
+      'ZORBIT_ORG_ID environment variable is required when using --api-url. Set it or omit --api-url for local generation.',
+    );
+  }
+
+  const url = new URL(`/api/v1/O/${orgId}/zmb/generate`, apiUrl);
+  const body = JSON.stringify({
+    moduleName,
+    formBuilderId,
+    formBuilderToken,
+    skinSlug,
+    fetchStrategy,
+    cachingPreference,
+    description,
+  });
+
+  console.log(chalk.blue(`\nCalling ZMB Factory API at ${url.toString()}...\n`));
+
+  return new Promise((resolve, reject) => {
+    const protocol = url.protocol === 'https:' ? https : http;
+    const req = protocol.request(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+          Authorization: `Bearer ${token}`,
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', async () => {
+          if (res.statusCode !== 200 && res.statusCode !== 201) {
+            const body = Buffer.concat(chunks).toString();
+            return reject(new Error(`API error ${res.statusCode}: ${body}`));
+          }
+          const zipBuffer = Buffer.concat(chunks);
+          const fullModuleName = `zorbit-app-${moduleName}`;
+          const zipPath = path.join(outputDir, `${fullModuleName}.zip`);
+          await fs.ensureDir(outputDir);
+          fs.writeFileSync(zipPath, zipBuffer);
+          console.log(chalk.green(`\nZIP downloaded: ${zipPath}`));
+          console.log(chalk.gray('Extract with: unzip ' + zipPath));
+          resolve();
+        });
+      },
+    );
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Command registration
+// ---------------------------------------------------------------------------
+
+interface ZmbCreateOptions {
+  type?: string;
+  slug?: string;
+  name?: string;
+  // app-mode flags
+  formId?: string;
+  token?: string;
+  skin?: string;
+  strategy?: string;
+  cache?: boolean;
+  description?: string;
+  output?: string;
+  apiUrl?: string;
+  bearerToken?: string;
+  scaffold?: string;
+  edition?: string;
+  category?: string;
+  capability?: string;
+  // composition-mode flags
+  resources?: string;
+  whitelabelId?: string;
+}
+
+export function zmbCreateCommand(program: Command): void {
+  const zmb = program.command('zmb').description('ZMB — Zorbit Module Boilerplate factory');
+
+  zmb
+    .command('create')
+    .description(
+      'Generate a new Zorbit module from configuration. --type=app produces a full backend scaffold, --type=composition produces a manifest-only module.',
+    )
+    .option(
+      '--type <type>',
+      'Output type: "app" (backend scaffold + manifest v2) or "composition" (manifest-only)',
+      'app',
+    )
+    .option('--slug <slug>', 'Module slug (used in feRoute /m/<slug>/...). REQUIRED.')
+    .option('--name <name>', 'Human-readable module name, e.g. "Health Insurance". REQUIRED.')
+    // v2 placement flags
+    .option(
+      '--scaffold <scaffold>',
+      `Scaffold: one of ${VALID_SCAFFOLDS.join(' | ')}. REQUIRED for type=app.`,
+    )
+    .option('--edition <name>', 'Edition name (REQUIRED when scaffold=Business). e.g. "Health Insurance"')
+    .option(
+      '--category <category>',
+      `Category (REQUIRED when scaffold=Business). One of: ${VALID_CATEGORIES.join(' | ')}`,
+    )
+    .option('--capability <label>', 'L3 capability label, e.g. "Policy Administration". REQUIRED.')
+    // app-mode specific flags
+    .option('--form-id <slug>', '[app] Form Builder form slug')
+    .option('--token <token>', '[app] Form Builder access token')
+    .option('--skin <slug>', '[app] White Label theme slug', 'default')
+    .option(
+      '--strategy <strategy>',
+      '[app] Fetch strategy: live_only | static_only | live_fallback',
+      'live_fallback',
+    )
+    .option('--cache', '[app] Cache first live copy as static fallback (default: true)')
+    // composition-mode specific flags
+    .option('--resources <csv>', '[composition] CSV of resource names (e.g. "rate-cards,test-data")')
+    .option('--whitelabel-id <id>', '[composition] White-label theme ID (e.g. WL-0A1B)')
+    // shared
+    .option('--description <desc>', 'Module description')
+    .option('--output <dir>', 'Output directory (default: current directory)')
+    .option('--api-url <url>', '[app] ZMB Factory API URL (if provided, delegates to remote API)')
+    .option('--bearer-token <token>', '[app] Bearer token for ZMB Factory API (required with --api-url)')
+    .action(async (options: ZmbCreateOptions) => {
+      try {
+        console.log(chalk.blue('\nZorbit Module Boilerplate (ZMB) Factory\n'));
+
+        const type: ZmbType = (options.type === 'composition' ? 'composition' : 'app');
+
+        // --- Shared required flags --------------------------------------
+        let slug = options.slug || '';
+        let name = options.name || '';
+
+        if (!slug) {
+          const res = await inquirer.prompt<{ slug: string }>([
+            {
+              type: 'input',
+              name: 'slug',
+              message: 'Slug (used in /m/<slug>/... routes):',
+              validate: validateSlug,
+            },
+          ]);
+          slug = res.slug;
+        } else {
+          const check = validateSlug(slug);
+          if (check !== true) {
+            console.error(chalk.red(`Invalid slug: ${check}`));
+            process.exit(1);
+          }
+        }
+
+        if (!name) {
+          const res = await inquirer.prompt<{ name: string }>([
+            { type: 'input', name: 'name', message: 'Human-readable name:' },
+          ]);
+          name = res.name;
+        }
+
+        // Map slug (hyphens allowed) to moduleName (underscores only) for backend dirs
+        const moduleName = slug.replace(/-/g, '_');
+        const moduleNameCheck = validateModuleName(moduleName);
+        if (moduleNameCheck !== true) {
+          console.error(chalk.red(`Derived module name invalid: ${moduleNameCheck}`));
+          process.exit(1);
+        }
+
+        // Capability is always required
+        let capability = options.capability;
+        if (!capability) {
+          const res = await inquirer.prompt<{ capability: string }>([
+            { type: 'input', name: 'capability', message: 'Capability (L3 label):' },
+          ]);
+          capability = res.capability;
+        }
+
+        // Scaffold (required for app, optional for composition but collect anyway)
+        let scaffold = options.scaffold;
+        if (type === 'app' && !scaffold) {
+          const res = await inquirer.prompt<{ scaffold: string }>([
+            {
+              type: 'list',
+              name: 'scaffold',
+              message: 'Scaffold:',
+              choices: VALID_SCAFFOLDS,
+            },
+          ]);
+          scaffold = res.scaffold;
+        } else if (!scaffold) {
+          scaffold = 'Business';
+        }
+        if (!VALID_SCAFFOLDS.includes(scaffold as typeof VALID_SCAFFOLDS[number])) {
+          console.error(
+            chalk.red(`Invalid scaffold "${scaffold}". Must be one of ${VALID_SCAFFOLDS.join(', ')}`),
+          );
+          process.exit(1);
+        }
+
+        // Edition + category when Business
+        let edition = options.edition;
+        let category = options.category;
+        if (scaffold === 'Business') {
+          if (!edition) {
+            const res = await inquirer.prompt<{ edition: string }>([
+              { type: 'input', name: 'edition', message: 'Edition name (e.g. "Health Insurance"):' },
+            ]);
+            edition = res.edition;
+          }
+          if (!category) {
+            const res = await inquirer.prompt<{ category: string }>([
+              {
+                type: 'list',
+                name: 'category',
+                message: 'Category:',
+                choices: VALID_CATEGORIES,
+              },
+            ]);
+            category = res.category;
+          }
+          if (!VALID_CATEGORIES.includes(category as typeof VALID_CATEGORIES[number])) {
+            console.error(
+              chalk.red(
+                `Invalid category "${category}". Must be one of ${VALID_CATEGORIES.join(', ')}`,
+              ),
+            );
+            process.exit(1);
+          }
+        }
+
+        // --- Type-specific flags ---------------------------------------
+        let resources: string[] = [];
+        let whitelabelId = options.whitelabelId || '';
+
+        if (type === 'composition') {
+          if (!options.resources) {
+            console.error(
+              chalk.red('Composition mode requires --resources <csv> (e.g. "rate-cards,test-data")'),
+            );
+            process.exit(1);
+          }
+          resources = parseResources(options.resources);
+          if (resources.length === 0) {
+            console.error(chalk.red('No resources parsed from --resources flag'));
+            process.exit(1);
+          }
+          if (!whitelabelId) {
+            console.error(chalk.red('Composition mode requires --whitelabel-id <id>'));
+            process.exit(1);
+          }
+        }
+
+        // --- App-mode extra flags (form builder etc.) ------------------
+        let formBuilderId = options.formId || '';
+        let formBuilderToken = options.token || '';
+        let skinSlug = options.skin || 'default';
+        let fetchStrategy: FetchStrategy = (options.strategy as FetchStrategy) || 'live_fallback';
+        const cachingPreference = options.cache !== undefined ? options.cache : true;
+        const description = options.description || '';
+
+        if (type === 'app') {
+          if (!formBuilderId) {
+            // non-interactive call with a placeholder default so the scaffold still works
+            formBuilderId = `${slug}-form`;
+          }
+          if (
+            fetchStrategy !== 'live_only' &&
+            fetchStrategy !== 'static_only' &&
+            fetchStrategy !== 'live_fallback'
+          ) {
+            fetchStrategy = 'live_fallback';
+          }
+        }
+
+        const config: ZmbConfig = {
+          type,
+          slug,
+          name,
+          moduleName,
+          formBuilderId,
+          formBuilderToken,
+          skinSlug,
+          fetchStrategy,
+          cachingPreference,
+          description,
+          outputDir: options.output ? path.resolve(options.output) : process.cwd(),
+          apiUrl: options.apiUrl,
+          scaffold,
+          edition,
+          category,
+          capability,
+          resources,
+          whitelabelId,
+        };
+
+        if (type === 'composition') {
+          const moduleDir = await generateCompositionLocally(config);
+          console.log(chalk.green(`\nComposition module generated at: ${moduleDir}`));
+          console.log(chalk.gray('\nNext steps:'));
+          console.log(chalk.gray(`  cat ${moduleDir}/zorbit-module-manifest.json`));
+          console.log(chalk.gray('  # replace placeholder FRM-/DT- IDs with real ones'));
+          console.log(chalk.gray('  # register via POST /api/module-registry/api/v1/G/modules'));
+          return;
+        }
+
+        // app mode
+        if (config.apiUrl) {
+          const bearerToken = options.bearerToken || process.env.ZORBIT_TOKEN || '';
+          if (!bearerToken) {
+            console.error(
+              chalk.red(
+                'Error: --bearer-token or ZORBIT_TOKEN env var is required when using --api-url',
+              ),
+            );
+            process.exit(1);
+          }
+          await generateViaApi(config, bearerToken);
+        } else {
+          const moduleDir = await generateAppLocally(config);
+          console.log(chalk.green(`\nModule generated at: ${moduleDir}`));
+          console.log(chalk.gray('\nNext steps:'));
+          console.log(chalk.gray(`  cd ${moduleDir}`));
+          console.log(chalk.gray('  npm install'));
+          console.log(chalk.gray('  cp .env.example .env'));
+          console.log(chalk.gray('  npm run dev'));
+          console.log('');
+          console.log(chalk.cyan('Files to review:'));
+          console.log(chalk.cyan(`  zorbit-module-manifest.json — v2 manifest (placement, navigation, guide, deployments, db)`));
+          console.log(chalk.cyan(`  src/config/app.config.ts    — platform endpoints`));
+        }
+      } catch (error) {
+        console.error(chalk.red('Error generating module:'), error);
+        process.exit(1);
+      }
+    });
+}
