@@ -473,7 +473,7 @@ export function buildCompositionManifest(
       // validator still requires a non-empty health.beRoute, so we
       // point at the module-registry health endpoint — a composition
       // module is "alive" as long as the registry can serve its manifest.
-      health: { beRoute: '/api/module-registry/api/v1/G/health' },
+      health: { beRoute: '/api/module_registry/api/v1/G/health' },
       build: {
         commitSha: 'placeholder-commit-sha',
         builtAt: new Date().toISOString(),

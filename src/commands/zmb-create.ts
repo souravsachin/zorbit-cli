@@ -564,7 +564,7 @@ ${whitelabelId}
 1. Replace each placeholder \`FRM-XXXX\`, \`DT-XXXX\` ID with the real
    form_builder template ID and datatable page ID created in their
    respective PFS admin consoles.
-2. Register this module via \`POST /api/module-registry/api/v1/G/modules\`.
+2. Register this module via \`POST /api/module_registry/api/v1/G/modules\`.
 3. The module renders at \`/m/${slug}/...\` without any further code.
 `;
   await writeFile(path.join(moduleDir, 'CLAUDE.md'), claudeMd);
@@ -893,7 +893,7 @@ export function zmbCreateCommand(program: Command): void {
           console.log(chalk.gray('\nNext steps:'));
           console.log(chalk.gray(`  cat ${moduleDir}/zorbit-module-manifest.json`));
           console.log(chalk.gray('  # replace placeholder FRM-/DT- IDs with real ones'));
-          console.log(chalk.gray('  # register via POST /api/module-registry/api/v1/G/modules'));
+          console.log(chalk.gray('  # register via POST /api/module_registry/api/v1/G/modules'));
           return;
         }
 
