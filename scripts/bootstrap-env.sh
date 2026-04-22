@@ -13,11 +13,16 @@
 #   4   deploy step failed
 #
 # Usage:
-#   ./bootstrap-env.sh [--dry-run] [--env <name>] [--yes]
+#   ./bootstrap-env.sh [--dry-run] [--env <name>] [--yes] [--rollback-last]
+#                      [--no-auto-rollback]
 #
-#   --dry-run   Print every state-changing command without executing.
-#   --env       Skip env prompt (dev|qa|demo|uat|prod).
-#   --yes       Skip final confirmation prompt.
+#   --dry-run            Print every state-changing command without executing.
+#   --env                Skip env prompt (dev|qa|demo|uat|prod).
+#   --yes                Skip final confirmation prompt.
+#   --rollback-last      Replay the install journal in reverse for the given
+#                        --env and exit. No install is performed.
+#   --no-auto-rollback   On install failure, keep the partial install and the
+#                        journal in place (default: auto-rollback on error).
 #
 # Author: Zorbit platform team
 # Spec:   zorbit-core/platform-spec/environments.yaml v1.0
@@ -39,6 +44,8 @@ source "${LIB_DIR}/services.sh"
 source "${LIB_DIR}/nginx.sh"
 # shellcheck disable=SC1091
 source "${LIB_DIR}/verify.sh"
+# shellcheck disable=SC1091
+source "${LIB_DIR}/journal.sh"
 
 # ---------------------------------------------------------------------------
 # Arg parsing.
@@ -46,18 +53,64 @@ source "${LIB_DIR}/verify.sh"
 DRY_RUN=false
 ENV_ARG=""
 SKIP_CONFIRM=false
+ROLLBACK_LAST=false
+NO_AUTO_ROLLBACK=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --dry-run)  DRY_RUN=true; shift;;
-    --env)      ENV_ARG="$2"; shift 2;;
-    --yes|-y)   SKIP_CONFIRM=true; shift;;
+    --dry-run)           DRY_RUN=true; shift;;
+    --env)               ENV_ARG="$2"; shift 2;;
+    --yes|-y)            SKIP_CONFIRM=true; shift;;
+    --rollback-last)     ROLLBACK_LAST=true; shift;;
+    --no-auto-rollback)  NO_AUTO_ROLLBACK=true; shift;;
     --help|-h)
-      sed -n '/^#/p' "${BASH_SOURCE[0]}" | sed -n '1,35p'; exit 0;;
+      sed -n '/^#/p' "${BASH_SOURCE[0]}" | sed -n '1,40p'; exit 0;;
     *) log_error "Unknown arg: $1"; exit 2;;
   esac
 done
 export DRY_RUN
+[[ "${NO_AUTO_ROLLBACK}" == "true" ]] && export ZORBIT_SKIP_AUTO_ROLLBACK=true
+
+# ---------------------------------------------------------------------------
+# Rollback-last mode: replay journal in reverse and exit.
+# ---------------------------------------------------------------------------
+if [[ "${ROLLBACK_LAST}" == "true" ]]; then
+  if [[ -z "${ENV_ARG}" ]]; then
+    log_error "--rollback-last requires --env <name>"
+    exit 2
+  fi
+  ENV_SHORT="${ENV_ARG#zorbit-}"
+  ENV_NAME="zorbit-${ENV_SHORT}"
+
+  cat <<ROLLHEAD
+${C_BOLD}${C_YEL}
+  zorbit-platform — ROLLBACK-LAST
+  -------------------------------
+  env:    ${ENV_NAME}
+  mode:   $( [[ "${DRY_RUN}" == "true" ]] && echo "DRY-RUN" || echo "LIVE" )
+  user:   $(whoami)
+  journal: $(journal_path "${ENV_NAME}")
+  date:   $(date +%Y-%m-%d\ %H:%M\ %Z)
+${C_RESET}
+ROLLHEAD
+
+  log_step "Planned undos (LIFO)"
+  journal_list_undos "${ENV_NAME}" || { log_warn "Nothing to roll back"; exit 0; }
+
+  if [[ "${DRY_RUN}" != "true" && "${SKIP_CONFIRM}" != "true" ]]; then
+    ask_yn CONFIRM_ROLLBACK "Execute the undos above?" "n"
+    [[ "${CONFIRM_ROLLBACK}" != "y" ]] && { log_warn "Cancelled."; exit ${EXIT_USER_CANCEL}; }
+  fi
+
+  log_step "Executing undos"
+  journal_rollback "${ENV_NAME}"
+  RC=$?
+  if [[ "${DRY_RUN}" != "true" && ${RC} -eq 0 ]]; then
+    journal_archive "${ENV_NAME}"
+  fi
+  log_ok "Rollback finished (exit ${RC})"
+  exit ${RC}
+fi
 
 # ---------------------------------------------------------------------------
 # Banner.
@@ -123,6 +176,12 @@ else
 fi
 ENV_NAME="zorbit-${ENV_SHORT}"
 
+# Initialise install journal + register auto-rollback trap.
+# Any non-zero exit from this point triggers journal replay unless the caller
+# passed --no-auto-rollback (sets ZORBIT_SKIP_AUTO_ROLLBACK=true).
+journal_init "${ENV_NAME}"
+trap 'journal_rollback_auto_trap "${ENV_NAME}" $?' EXIT
+
 # Pull defaults from spec.
 DEFAULT_HOST=$(yaml_get "${ENV_FILE}" "[e['default_host'] for e in data['environments'] if e['name']=='${ENV_NAME}'][0]" 2>/dev/null || echo "zorbit-${ENV_SHORT}.onezippy.ai")
 PORT_BASE=$(yaml_get "${ENV_FILE}" "[e['port_base'] for e in data['environments'] if e['name']=='${ENV_NAME}'][0]" 2>/dev/null || echo "3100")
@@ -187,14 +246,26 @@ fi
 # ---------------------------------------------------------------------------
 log_step "Step 4/10 — Fetch source repositories"
 DEST_ROOT="${HOME}/workspace/zorbit/02_repos"
+journal_record "${ENV_NAME}" "preflight_dir" \
+  "mkdir -p ${DEST_ROOT}" \
+  "" "fs,preflight"
 run_cmd "Ensure dest dir ${DEST_ROOT}" mkdir -p "${DEST_ROOT}"
+journal_record "${ENV_NAME}" "git_clone" \
+  "clone_all_repos ${REMOTE_BASE} (manifest)" \
+  "" "git,clone"
 clone_all_repos "${REMOTE_BASE}" "${MANIFEST_FILE}" "${DEST_ROOT}"
 
 # ---------------------------------------------------------------------------
 # Step 5: Build images + service code.
 # ---------------------------------------------------------------------------
 log_step "Step 5/10 — Build base image + services"
+journal_record "${ENV_NAME}" "docker_pull_base" \
+  "docker build zorbit-pm2-base:1.0" \
+  "docker image rm -f zorbit-pm2-base:1.0 || true" "docker,build"
 build_base_image
+journal_record "${ENV_NAME}" "npm_build" \
+  "npm ci + npm run build for every service repo" \
+  "" "npm,build"
 build_service_repos "${MANIFEST_FILE}" "${DEST_ROOT}"
 
 # ---------------------------------------------------------------------------
@@ -202,12 +273,30 @@ build_service_repos "${MANIFEST_FILE}" "${DEST_ROOT}"
 # ---------------------------------------------------------------------------
 log_step "Step 6/10 — Initialise databases"
 CONTAINER_PREFIX=$(yaml_get "${ENV_FILE}" "[e['container_prefix'] for e in data['environments'] if e['name']=='${ENV_NAME}'][0]")
+journal_record "${ENV_NAME}" "docker_network_create" \
+  "docker network create ${CONTAINER_PREFIX}-net" \
+  "docker network rm ${CONTAINER_PREFIX}-net || true" "docker,network"
 ensure_network "${CONTAINER_PREFIX}-net"
+journal_record "${ENV_NAME}" "compose_up_postgres" \
+  "start_postgres ${CONTAINER_PREFIX}-pg" \
+  "docker rm -f ${CONTAINER_PREFIX}-pg || true" "docker,postgres"
 start_postgres "${ENV_NAME}" "${CONTAINER_PREFIX}-pg" "$((PORT_BASE + 500))" "${DATA_ROOT}"
+journal_record "${ENV_NAME}" "compose_up_mongo" \
+  "start_mongo ${CONTAINER_PREFIX}-mongo" \
+  "docker rm -f ${CONTAINER_PREFIX}-mongo || true" "docker,mongo"
 start_mongo    "${CONTAINER_PREFIX}-mongo" "$((PORT_BASE + 501))" "${DATA_ROOT}"
+journal_record "${ENV_NAME}" "compose_up_kafka" \
+  "start_kafka ${CONTAINER_PREFIX}-kafka" \
+  "docker rm -f ${CONTAINER_PREFIX}-kafka || true" "docker,kafka"
 start_kafka    "${CONTAINER_PREFIX}-kafka" "$((PORT_BASE + 502))"
+journal_record "${ENV_NAME}" "compose_up_redis" \
+  "start_redis ${CONTAINER_PREFIX}-redis" \
+  "docker rm -f ${CONTAINER_PREFIX}-redis || true" "docker,redis"
 start_redis    "${CONTAINER_PREFIX}-redis" "$((PORT_BASE + 503))" "${DATA_ROOT}"
 wait_postgres_ready "${CONTAINER_PREFIX}-pg" || log_warn "Postgres not ready — continuing"
+journal_record "${ENV_NAME}" "database_create" \
+  "create_service_databases ${CONTAINER_PREFIX}-pg" \
+  "# DBs dropped individually by decommission.sh" "database,postgres"
 create_service_databases "${CONTAINER_PREFIX}-pg" "${MANIFEST_FILE}"
 
 # ---------------------------------------------------------------------------
@@ -215,6 +304,9 @@ create_service_databases "${CONTAINER_PREFIX}-pg" "${MANIFEST_FILE}"
 # ---------------------------------------------------------------------------
 log_step "Step 7/10 — Generate compose file + start services"
 COMPOSE_OUT="/tmp/docker-compose.${ENV_NAME}.yml"
+journal_record "${ENV_NAME}" "compose_generate" \
+  "generate_compose_file ${ENV_NAME}" \
+  "rm -f ${COMPOSE_OUT}" "compose,yaml"
 generate_compose_file "${ENV_NAME}" "${ENV_FILE}" "${MANIFEST_FILE}" "${COMPOSE_OUT}"
 log_ok "Compose file: ${COMPOSE_OUT}"
 # We do NOT compose-up from the generated file here — each service has its own
@@ -229,6 +321,9 @@ fi
 # Step 8: Manifest registration.
 # ---------------------------------------------------------------------------
 log_step "Step 8/10 — Module registry announcement"
+journal_record "${ENV_NAME}" "module_registry_announce" \
+  "register_modules_via_kafka ${ENV_NAME}" \
+  "# module-registry records are TTL'd — no explicit undo" "kafka,module-registry"
 register_modules_via_kafka "${ENV_NAME}" "${MANIFEST_FILE}"
 verify_modules_ready "${PORT_BASE}"
 
@@ -237,15 +332,44 @@ verify_modules_ready "${PORT_BASE}"
 # ---------------------------------------------------------------------------
 log_step "Step 9/10 — Nginx site config (sudo required to install)"
 NGINX_OUT="/tmp/${HOSTNAME}.nginx.conf"
+journal_record "${ENV_NAME}" "nginx_config_install" \
+  "write ${NGINX_OUT} + sudo mv to /etc/nginx/sites-enabled/${HOSTNAME}" \
+  "rm -f ${NGINX_OUT}  # /etc/nginx removal requires sudo from decommission.sh" "nginx,sudo"
 generate_nginx_config "${HOSTNAME}" "${ENV_NAME}" "${PORT_BASE}" "${NGINX_OUT}"
 emit_nginx_install_instructions "${NGINX_OUT}" "${HOSTNAME}"
+journal_record "${ENV_NAME}" "certbot_ssl" \
+  "certbot --nginx -d ${HOSTNAME} (sudo manual)" \
+  "# SSL certs are shared — never auto-delete" "nginx,certbot"
 
 # ---------------------------------------------------------------------------
 # Step 10: Verification + next steps.
 # ---------------------------------------------------------------------------
 log_step "Step 10/10 — Final verification"
+journal_record "${ENV_NAME}" "smoke_test_run" \
+  "smoke-test.sh --env ${ENV_SHORT}" \
+  "" "verify,smoke"
 verify_service_health "${ENV_NAME}" "${ENV_FILE}" "${MANIFEST_FILE}"
+
+# Systemd + caffeinate step records (sudo, owner pastes instructions separately).
+journal_record "${ENV_NAME}" "systemd_enable" \
+  "systemctl enable zorbit-${ENV_SHORT}.service (sudo manual)" \
+  "# systemctl disable/rm requires sudo — see decommission.sh" "systemd,sudo"
+if [[ "${CAFFEINATE}" == "y" ]]; then
+  journal_record "${ENV_NAME}" "caffeinate_enable" \
+    "enable caffeinate/always-on for ${ENV_NAME}" \
+    "pkill -f 'caffeinate.*${ENV_NAME}' || true" "runtime"
+fi
+
 print_next_steps "${ENV_NAME}" "${HOSTNAME}"
+
+# Install finished cleanly — archive the journal so it isn't replayed on
+# future installs but remains available for forensics.
+if [[ "${DRY_RUN}" != "true" ]]; then
+  journal_archive "${ENV_NAME}"
+fi
+
+# Disable the auto-rollback trap — we're done.
+trap - EXIT
 
 log_ok "Bootstrap complete for ${ENV_NAME}"
 exit ${EXIT_OK}
