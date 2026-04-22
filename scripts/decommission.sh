@@ -97,19 +97,22 @@ ${C_RESET}
 BANNER
 
 # ---------------------------------------------------------------------------
-# Step 1: Service-account guard.
+# Step 1: Per-env service-account guard.
+# Owner feedback 2026-04-23 (flaw 4): $USER MUST match the env account name.
 # ---------------------------------------------------------------------------
-log_step "Step 1/8 — Service-account guard"
-SVC_PATTERN="^(zorbit-svc|zorbit-deployer)$"
-if ! check_service_account "${SVC_PATTERN}"; then
+log_step "Step 1/8 — Per-env service-account guard"
+EXPECTED_USER="zorbit-${ENV_SHORT}"
+CURRENT_USER="$(whoami)"
+if [[ -n "${ZORBIT_SERVICE_USER:-}" && "${CURRENT_USER}" == "${ZORBIT_SERVICE_USER}" ]]; then
+  log_warn "ZORBIT_SERVICE_USER override accepted: ${CURRENT_USER}"
+elif [[ "${CURRENT_USER}" != "${EXPECTED_USER}" ]]; then
   cat <<GUARD
 
-${C_RED}[BLOCKED]${C_RESET} decommission.sh must run as a Zorbit service account.
+${C_RED}[BLOCKED]${C_RESET} decommission.sh must run as ${EXPECTED_USER} for env ${ENV_NAME}.
+Current user: ${CURRENT_USER}
 
 Options:
-  1. sudo -u zorbit-deployer -i
-     cd ~/workspace/zorbit/02_repos/zorbit-cli
-     ./scripts/decommission.sh --env ${ENV_SHORT}
+  1. sudo -u ${EXPECTED_USER} bash ${SCRIPT_DIR}/decommission.sh --env ${ENV_SHORT}
 
   2. Override (at your own risk):
      ZORBIT_SERVICE_USER=\$(whoami) ./decommission.sh --env ${ENV_SHORT}
@@ -117,7 +120,7 @@ Options:
 GUARD
   exit ${EXIT_ACCOUNT_GUARD}
 fi
-log_ok "Running as service account: $(whoami)"
+log_ok "Running as correct service account: ${CURRENT_USER}"
 
 # ---------------------------------------------------------------------------
 # Step 2: Prod guard.

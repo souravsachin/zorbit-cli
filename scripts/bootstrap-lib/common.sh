@@ -115,6 +115,21 @@ ask_yn() {
   done
 }
 
+ask_yn_with_help() {
+  # ask_yn_with_help <var-name> <question> <yes-help> <no-help> [default y|n]
+  #
+  # Owner feedback 2026-04-23 (flaw 3): every y/n prompt must explain what
+  # BOTH answers do before the user chooses. The two-line help block prints
+  # immediately above the prompt so the operator never guesses.
+  local __var="$1"; local __q="$2"; local __yes="$3"; local __no="$4"
+  local __default="${5:-n}"
+
+  printf '\n'
+  printf '  %s[yes]%s %s\n' "${C_GRN}" "${C_RESET}" "${__yes}"
+  printf '  %s[no ]%s %s\n' "${C_YEL}" "${C_RESET}" "${__no}"
+  ask_yn "${__var}" "${__q}" "${__default}"
+}
+
 print_table_header() {
   printf '%-40s | %-10s | %s\n' "$1" "$2" "$3"
   printf '%s\n' "--------------------------------------------------------------------------------"

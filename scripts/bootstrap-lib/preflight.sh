@@ -135,6 +135,10 @@ check_ports() {
 }
 
 check_service_account() {
+  # Legacy helper kept for decommission.sh backward-compatibility.
+  # The canonical per-env guard now lives inline in bootstrap-env.sh and
+  # decommission.sh (flaw 4, 2026-04-23): $USER must equal `zorbit-<env>`.
+  # This wrapper simply checks against a regex caller supplies.
   local allowed_pattern="$1"   # regex
   local current_user
   current_user="$(whoami)"
@@ -151,7 +155,7 @@ check_service_account() {
   fi
 
   _check "service-account" "fail" \
-    "Run as zorbit-deployer: sudo -u zorbit-deployer -i ./bootstrap-env.sh (or set ZORBIT_SERVICE_USER=${current_user})"
+    "Run as the env-specific account: sudo -u zorbit-<env> bash ./bootstrap-env.sh --env <env> (or set ZORBIT_SERVICE_USER=${current_user})"
   return 1
 }
 
