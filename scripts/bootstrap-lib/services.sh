@@ -88,9 +88,12 @@ compose = {
     "services": {},
 }
 
-# Shared infra
+# Shared infra — per owner rule 2026-04-23, containers shared across
+# non-prod environments keep the `zs-` prefix (s = Shared). Do NOT
+# rewrite `zs-` to the env prefix. Prod will eventually use dedicated
+# `zp-` instances declared separately.
 for infra in manifest['infrastructure']:
-    name = infra['name'].replace('zs-', f'{prefix}-')
+    name = infra['name']  # keep zs- prefix as-is for shared infra
     svc = {
         "image": infra['image'],
         "container_name": name,
