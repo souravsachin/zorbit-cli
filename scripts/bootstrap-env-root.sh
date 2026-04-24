@@ -125,7 +125,7 @@ if ! command -v gh >/dev/null 2>&1; then
   say "   Install gh CLI"
   do_cmd "curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg"
   do_cmd "chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg"
-  do_cmd "echo 'deb [arch=\$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main' > /etc/apt/sources.list.d/github-cli.list"
+  do_cmd "bash -c 'echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main\" > /etc/apt/sources.list.d/github-cli.list'"
   do_cmd "apt-get update -y && apt-get install -y gh"
 fi
 

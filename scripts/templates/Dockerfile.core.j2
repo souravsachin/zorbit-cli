@@ -1,0 +1,125 @@
+# ---------------------------------------------------------------------------
+# Dockerfile.core.j2 — rendered by package-bundle.sh
+# ---------------------------------------------------------------------------
+# One container runs every CORE service under PM2.
+# Container name resolves to: {{ENV_PREFIX}}-core (e.g. ze-core).
+# Port range:                  3000-3099
+#
+# Build context = zorbit workspace root (/Users/s/workspace/zorbit).
+# Paths below are relative to that root:
+#   02_repos/zorbit-<service>/dist
+#   02_repos/zorbit-<service>/package.json
+#   02_repos/zorbit-<service>/package-lock.json
+#   02_repos/zorbit-<service>/zorbit-module-manifest.json
+#   02_repos/zorbit-sdk-node    (copied once, file-ref from every package.json)
+# ---------------------------------------------------------------------------
+
+FROM zorbit-pm2-base:1.0
+
+WORKDIR /app
+
+# ---------------------------------------------------------------------------
+# Shared SDK — every service's package.json file-refs ../zorbit-sdk-node
+# ---------------------------------------------------------------------------
+COPY 02_repos/zorbit-sdk-node /app/zorbit-sdk-node
+
+# ---------------------------------------------------------------------------
+# Services (alphabetical). Dual-copy-prune pattern per service:
+#   1. copy dist/ + package*.json + manifest
+#   2. npm ci --omit=dev in that service's dir
+# ---------------------------------------------------------------------------
+
+# zorbit-audit (3006)
+COPY 02_repos/zorbit-audit/dist                         /app/zorbit-audit/dist
+COPY 02_repos/zorbit-audit/package.json                 /app/zorbit-audit/package.json
+COPY 02_repos/zorbit-audit/package-lock.json            /app/zorbit-audit/package-lock.json
+COPY 02_repos/zorbit-audit/zorbit-module-manifest.json  /app/zorbit-audit/zorbit-module-manifest.json
+
+# zorbit-authorization (3002)
+COPY 02_repos/zorbit-authorization/dist                         /app/zorbit-authorization/dist
+COPY 02_repos/zorbit-authorization/package.json                 /app/zorbit-authorization/package.json
+COPY 02_repos/zorbit-authorization/package-lock.json            /app/zorbit-authorization/package-lock.json
+COPY 02_repos/zorbit-authorization/zorbit-module-manifest.json  /app/zorbit-authorization/zorbit-module-manifest.json
+
+# zorbit-cor-deployment_registry (3021)
+COPY 02_repos/zorbit-cor-deployment_registry/dist                         /app/zorbit-cor-deployment_registry/dist
+COPY 02_repos/zorbit-cor-deployment_registry/package.json                 /app/zorbit-cor-deployment_registry/package.json
+COPY 02_repos/zorbit-cor-deployment_registry/package-lock.json            /app/zorbit-cor-deployment_registry/package-lock.json
+COPY 02_repos/zorbit-cor-deployment_registry/zorbit-module-manifest.json  /app/zorbit-cor-deployment_registry/zorbit-module-manifest.json
+
+# zorbit-cor-module_registry (3020)
+COPY 02_repos/zorbit-cor-module_registry/dist                         /app/zorbit-cor-module_registry/dist
+COPY 02_repos/zorbit-cor-module_registry/package.json                 /app/zorbit-cor-module_registry/package.json
+COPY 02_repos/zorbit-cor-module_registry/package-lock.json            /app/zorbit-cor-module_registry/package-lock.json
+COPY 02_repos/zorbit-cor-module_registry/zorbit-module-manifest.json  /app/zorbit-cor-module_registry/zorbit-module-manifest.json
+
+# zorbit-cor-observability (3022)
+COPY 02_repos/zorbit-cor-observability/dist                         /app/zorbit-cor-observability/dist
+COPY 02_repos/zorbit-cor-observability/package.json                 /app/zorbit-cor-observability/package.json
+COPY 02_repos/zorbit-cor-observability/package-lock.json            /app/zorbit-cor-observability/package-lock.json
+COPY 02_repos/zorbit-cor-observability/zorbit-module-manifest.json  /app/zorbit-cor-observability/zorbit-module-manifest.json
+
+# zorbit-cor-secrets_vault (3023)
+COPY 02_repos/zorbit-cor-secrets_vault/dist                         /app/zorbit-cor-secrets_vault/dist
+COPY 02_repos/zorbit-cor-secrets_vault/package.json                 /app/zorbit-cor-secrets_vault/package.json
+COPY 02_repos/zorbit-cor-secrets_vault/package-lock.json            /app/zorbit-cor-secrets_vault/package-lock.json
+COPY 02_repos/zorbit-cor-secrets_vault/zorbit-module-manifest.json  /app/zorbit-cor-secrets_vault/zorbit-module-manifest.json
+
+# zorbit-event_bus (3004)
+COPY 02_repos/zorbit-event_bus/dist                         /app/zorbit-event_bus/dist
+COPY 02_repos/zorbit-event_bus/package.json                 /app/zorbit-event_bus/package.json
+COPY 02_repos/zorbit-event_bus/package-lock.json            /app/zorbit-event_bus/package-lock.json
+COPY 02_repos/zorbit-event_bus/zorbit-module-manifest.json  /app/zorbit-event_bus/zorbit-module-manifest.json
+
+# zorbit-identity (3001)
+COPY 02_repos/zorbit-identity/dist                         /app/zorbit-identity/dist
+COPY 02_repos/zorbit-identity/package.json                 /app/zorbit-identity/package.json
+COPY 02_repos/zorbit-identity/package-lock.json            /app/zorbit-identity/package-lock.json
+COPY 02_repos/zorbit-identity/zorbit-module-manifest.json  /app/zorbit-identity/zorbit-module-manifest.json
+
+# zorbit-navigation (3003)
+COPY 02_repos/zorbit-navigation/dist                         /app/zorbit-navigation/dist
+COPY 02_repos/zorbit-navigation/package.json                 /app/zorbit-navigation/package.json
+COPY 02_repos/zorbit-navigation/package-lock.json            /app/zorbit-navigation/package-lock.json
+COPY 02_repos/zorbit-navigation/zorbit-module-manifest.json  /app/zorbit-navigation/zorbit-module-manifest.json
+
+# zorbit-pii-vault (3005)
+COPY 02_repos/zorbit-pii-vault/dist                         /app/zorbit-pii-vault/dist
+COPY 02_repos/zorbit-pii-vault/package.json                 /app/zorbit-pii-vault/package.json
+COPY 02_repos/zorbit-pii-vault/package-lock.json            /app/zorbit-pii-vault/package-lock.json
+COPY 02_repos/zorbit-pii-vault/zorbit-module-manifest.json  /app/zorbit-pii-vault/zorbit-module-manifest.json
+
+# ---------------------------------------------------------------------------
+# Install production deps for every service (dual-copy-prune).
+# ---------------------------------------------------------------------------
+RUN set -eux; \
+    for svc in \
+      zorbit-audit \
+      zorbit-authorization \
+      zorbit-cor-deployment_registry \
+      zorbit-cor-module_registry \
+      zorbit-cor-observability \
+      zorbit-cor-secrets_vault \
+      zorbit-event_bus \
+      zorbit-identity \
+      zorbit-navigation \
+      zorbit-pii-vault ; do \
+      if [ -f "/app/${svc}/package.json" ]; then \
+        echo "→ installing deps for ${svc}"; \
+        (cd "/app/${svc}" && npm ci --omit=dev --no-audit --no-fund); \
+      fi; \
+    done
+
+# ---------------------------------------------------------------------------
+# PM2 ecosystem — describes every process in this bundle.
+# Rendered into the bundle at build time by scripts/render-ecosystem.sh;
+# for now ship the canonical core ecosystem alongside the Dockerfile.
+# ---------------------------------------------------------------------------
+COPY 02_repos/zorbit-cli/scripts/templates/ecosystems/core.ecosystem.config.js \
+     /app/ecosystem.config.js
+
+# Health curl base already in zorbit-pm2-base:1.0
+WORKDIR /app
+EXPOSE 3000-3099
+
+CMD ["pm2-runtime", "ecosystem.config.js"]

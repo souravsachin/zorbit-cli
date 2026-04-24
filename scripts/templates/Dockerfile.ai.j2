@@ -1,0 +1,37 @@
+# ---------------------------------------------------------------------------
+# Dockerfile.ai.j2 — rendered by package-bundle.sh
+# ---------------------------------------------------------------------------
+# Container: {{ENV_PREFIX}}-ai   (e.g. zu-ai)
+# Ports:     3600-3799
+# Runtime:   PM2
+# ---------------------------------------------------------------------------
+
+FROM zorbit-pm2-base:1.0
+
+WORKDIR /app
+
+# Shared SDK
+COPY 02_repos/zorbit-sdk-node /app/zorbit-sdk-node
+
+# AI services (alphabetical)
+COPY 02_repos/zorbit-ai-tele_uw/dist                         /app/zorbit-ai-tele_uw/dist
+COPY 02_repos/zorbit-ai-tele_uw/package.json                 /app/zorbit-ai-tele_uw/package.json
+COPY 02_repos/zorbit-ai-tele_uw/package-lock.json            /app/zorbit-ai-tele_uw/package-lock.json
+COPY 02_repos/zorbit-ai-tele_uw/zorbit-module-manifest.json  /app/zorbit-ai-tele_uw/zorbit-module-manifest.json
+
+RUN set -eux; \
+    for svc in \
+      zorbit-ai-tele_uw ; do \
+      if [ -f "/app/${svc}/package.json" ]; then \
+        echo "→ installing deps for ${svc}"; \
+        (cd "/app/${svc}" && npm ci --omit=dev --no-audit --no-fund); \
+      fi; \
+    done
+
+COPY 02_repos/zorbit-cli/scripts/templates/ecosystems/ai.ecosystem.config.js \
+     /app/ecosystem.config.js
+
+WORKDIR /app
+EXPOSE 3600-3799
+
+CMD ["pm2-runtime", "ecosystem.config.js"]

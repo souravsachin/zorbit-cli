@@ -1,0 +1,83 @@
+# /etc/zorbit/nginx/conf.d/{{ENV_PREFIX}}-{{ENV_DOMAIN}}.conf
+# Rendered per env; mounted read-only into zs-nginx container.
+#
+# Example: zorbit-dev.onezippy.ai → ze-* containers
+#          zorbit-qa.onezippy.ai  → zq-* containers
+#
+# Containers reachable via docker DNS on zs-shared-net:
+#   {{ENV_PREFIX}}-core on ports 3000-3099
+#   {{ENV_PREFIX}}-pfs  on ports 3100-3199
+#   {{ENV_PREFIX}}-apps on ports 3200-3599
+#   {{ENV_PREFIX}}-ai   on ports 3600-3799
+#   {{ENV_PREFIX}}-web  serves static SPA on :80
+
+server {
+    listen 80;
+    server_name {{ENV_HOSTNAME}};
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name {{ENV_HOSTNAME}};
+
+    ssl_certificate     /etc/letsencrypt/live/onezippy.ai-wildcard/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/onezippy.ai-wildcard/privkey.pem;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    client_max_body_size 50M;
+
+    # ---- Zorbit API routes — route by module slug to the right bundle ----
+    # Core services (ports 3000-3099 on {{ENV_PREFIX}}-core)
+    location ~ ^/api/(identity|authorization|navigation|event_bus|pii_vault|audit|cor_deployment_registry|cor_module_registry|cor_observability|cor_secrets_vault)/ {
+        rewrite ^/api/[^/]+/(.*)$ /$1 break;
+        set $target {{ENV_PREFIX}}-core;
+        proxy_pass http://$target:3001;     # default — nginx will 502 unless real port; we need a lookup table
+        # NOTE: this catch-all is a placeholder — production routing below uses per-slug blocks
+    }
+
+    # Per-slug blocks generated from bundles.yaml (core bundle)
+    location /api/identity/                   { rewrite ^/api/identity/(.*)$ /$1                    break; proxy_pass http://{{ENV_PREFIX}}-core:3001; include /etc/nginx/snippets/proxy-headers.conf; }
+    location /api/authorization/              { rewrite ^/api/authorization/(.*)$ /$1              break; proxy_pass http://{{ENV_PREFIX}}-core:3002; include /etc/nginx/snippets/proxy-headers.conf; }
+    location /api/navigation/                 { rewrite ^/api/navigation/(.*)$ /$1                 break; proxy_pass http://{{ENV_PREFIX}}-core:3003; include /etc/nginx/snippets/proxy-headers.conf; }
+    location /api/event_bus/                  { rewrite ^/api/event_bus/(.*)$ /$1                  break; proxy_pass http://{{ENV_PREFIX}}-core:3004; include /etc/nginx/snippets/proxy-headers.conf; }
+    location /api/pii_vault/                  { rewrite ^/api/pii_vault/(.*)$ /$1                  break; proxy_pass http://{{ENV_PREFIX}}-core:3005; include /etc/nginx/snippets/proxy-headers.conf; }
+    location /api/audit/                      { rewrite ^/api/audit/(.*)$ /$1                      break; proxy_pass http://{{ENV_PREFIX}}-core:3006; include /etc/nginx/snippets/proxy-headers.conf; }
+    location /api/cor-deployment_registry/    { rewrite ^/api/cor-deployment_registry/(.*)$ /$1    break; proxy_pass http://{{ENV_PREFIX}}-core:3021; include /etc/nginx/snippets/proxy-headers.conf; }
+    location /api/cor-module_registry/        { rewrite ^/api/cor-module_registry/(.*)$ /$1        break; proxy_pass http://{{ENV_PREFIX}}-core:3020; include /etc/nginx/snippets/proxy-headers.conf; }
+    location /api/cor-observability/          { rewrite ^/api/cor-observability/(.*)$ /$1          break; proxy_pass http://{{ENV_PREFIX}}-core:3022; include /etc/nginx/snippets/proxy-headers.conf; }
+    location /api/cor-secrets_vault/          { rewrite ^/api/cor-secrets_vault/(.*)$ /$1          break; proxy_pass http://{{ENV_PREFIX}}-core:3023; include /etc/nginx/snippets/proxy-headers.conf; }
+
+    # PFS services (ports 3100-3199 on {{ENV_PREFIX}}-pfs) — catch-all by slug prefix
+    location ~ ^/api/(pfs-[a-z_]+)/ {
+        rewrite ^/api/[^/]+/(.*)$ /$1 break;
+        # PFS slugs in bundles.yaml all map to the same container; gates-harness
+        # verifies each responds to its specific port via docker DNS.
+        # For nginx to know the exact port per slug, we rely on the service
+        # itself to listen on its configured port AND the bundle Dockerfile
+        # CMD to start PM2 with the right ecosystem.
+        # Since all PFS services share the {{ENV_PREFIX}}-pfs container,
+        # we can route by port via an explicit map (rendered from bundles.yaml).
+        proxy_pass http://{{ENV_PREFIX}}-pfs:3100;  # placeholder — per-slug blocks below
+    }
+
+    # Per-slug PFS blocks — rendered from bundles.yaml by package-bundle.sh
+    # (NOTE: for v0.1.0 we ship explicit blocks per service; a later rev may
+    # switch to a dynamic map via Lua or the njs module.)
+    # BEGIN AUTO-GEN PFS BLOCKS
+    # END AUTO-GEN PFS BLOCKS
+
+    # APP services (ports 3200-3599 on {{ENV_PREFIX}}-apps)
+    # BEGIN AUTO-GEN APP BLOCKS
+    # END AUTO-GEN APP BLOCKS
+
+    # AI services (ports 3600-3799 on {{ENV_PREFIX}}-ai)
+    # BEGIN AUTO-GEN AI BLOCKS
+    # END AUTO-GEN AI BLOCKS
+
+    # ---- Unified console SPA (served by {{ENV_PREFIX}}-web nginx-alpine) ----
+    location / {
+        proxy_pass http://{{ENV_PREFIX}}-web:80;
+        include /etc/nginx/snippets/proxy-headers.conf;
+    }
+}

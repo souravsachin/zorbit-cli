@@ -1,0 +1,163 @@
+# ---------------------------------------------------------------------------
+# Shared infra (zs-*) — one instance serves all non-prod envs on the host.
+# Per CONTAINER-NAMING.md v1.0, non-prod shared infra uses `zs-` prefix.
+# ---------------------------------------------------------------------------
+# Deploy with:
+#   docker compose -f zs-shared.yml -p zs up -d
+# Networks:
+#   zs-shared-net    — attached by every env-bundle container that talks to shared
+# ---------------------------------------------------------------------------
+
+version: "3.8"
+
+networks:
+  zs-shared-net:
+    name: zs-shared-net
+    driver: bridge
+
+volumes:
+  zs-pg-data:
+  zs-mongo-data:
+  zs-kafka-data:
+  zs-redis-data:
+  zs-zeebe-data:
+
+services:
+
+  # -------------------------------------------------------------------------
+  # zs-pg — PostgreSQL 16 for all non-prod envs (DB names are env-prefixed)
+  # -------------------------------------------------------------------------
+  zs-pg:
+    image: postgres:16-alpine
+    container_name: zs-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zorbit
+      POSTGRES_PASSWORD: ${ZS_PG_PASSWORD:-zorbit_nonprod_secret}
+      POSTGRES_DB: postgres
+    volumes:
+      - zs-pg-data:/var/lib/postgresql/data
+    networks:
+      - zs-shared-net
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zorbit"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # -------------------------------------------------------------------------
+  # zs-mongo — MongoDB 7 (for datatable, form_builder, white_label, etc.)
+  # -------------------------------------------------------------------------
+  zs-mongo:
+    image: mongo:7
+    container_name: zs-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: zorbit
+      MONGO_INITDB_ROOT_PASSWORD: ${ZS_MONGO_PASSWORD:-zorbit_nonprod_secret}
+    volumes:
+      - zs-mongo-data:/data/db
+    networks:
+      - zs-shared-net
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # -------------------------------------------------------------------------
+  # zs-kafka — Kafka 3.7 in KRaft mode (no ZooKeeper)
+  # -------------------------------------------------------------------------
+  zs-kafka:
+    image: bitnami/kafka:3.7
+    container_name: zs-kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@zs-kafka:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://zs-kafka:9092
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes:
+      - zs-kafka-data:/bitnami/kafka
+    networks:
+      - zs-shared-net
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+
+  # -------------------------------------------------------------------------
+  # zs-redis — Redis 7 (cache + pub/sub)
+  # -------------------------------------------------------------------------
+  zs-redis:
+    image: redis:7-alpine
+    container_name: zs-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - zs-redis-data:/data
+    networks:
+      - zs-shared-net
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # -------------------------------------------------------------------------
+  # zs-nginx — shared front-door (wildcard onezippy.ai cert, Host-based routing)
+  # Routes zorbit-dev.onezippy.ai → ze-nginx (internal container) or directly
+  # to ze-web static + ze-core/pfs/apps/ai API locations.
+  # -------------------------------------------------------------------------
+  zs-nginx:
+    image: nginx:1.27-alpine
+    container_name: zs-nginx
+    restart: unless-stopped
+    volumes:
+      - /etc/zorbit/nginx/conf.d:/etc/nginx/conf.d:ro
+      - /etc/zorbit/nginx/certs:/etc/letsencrypt:ro
+    networks:
+      - zs-shared-net
+    ports:
+      - "80:80"
+      - "443:443"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+  # -------------------------------------------------------------------------
+  # zs-zeebe — Camunda 8 (kept available for future workflow needs; the
+  # active BPMN engine is zorbit-pfs-workflow_engine via bpmn-engine npm).
+  # Disabled by default; uncomment if pfs-workflow-decision flips to Camunda.
+  # -------------------------------------------------------------------------
+  # zs-zeebe:
+  #   image: camunda/zeebe:8.5
+  #   container_name: zs-zeebe
+  #   restart: unless-stopped
+  #   environment:
+  #     ZEEBE_BROKER_NETWORK_HOST: 0.0.0.0
+  #   volumes:
+  #     - zs-zeebe-data:/usr/local/zeebe/data
+  #   networks:
+  #     - zs-shared-net
+  #   ports:
+  #     - "26500:26500"
+  #     - "9600:9600"

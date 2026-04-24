@@ -113,24 +113,43 @@ check_disk_space() {
 }
 
 check_ports() {
-  # Check 80, 443, and a few in the 3000-3099 range.
-  local ports=(80 443 3000 3001 3002 3003 3004 3005)
+  # Check env-specific port range (port_base..port_base+9) + verify 80/443 are
+  # free OR held by a coexist-friendly listener (nginx/haproxy/caddy).
+  local base="${ENV_PORT_BASE:-3100}"
+  local ports=(80 443)
+  for i in $(seq 0 9); do ports+=("$((base + i))"); done
   local in_use=()
+  local ok_coexist=()
   for p in "${ports[@]}"; do
+    local listener=""
     if command -v ss >/dev/null 2>&1; then
-      if ss -tln 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${p}$"; then
-        in_use+=("${p}")
+      if ss -tlnp 2>/dev/null | awk '{print $4" "$7}' | grep -qE "[:.]${p}[ \t]"; then
+        listener=$(ss -tlnp 2>/dev/null | awk '{print $4" "$7}' | grep -E "[:.]${p}[ \t]" | head -1 | sed -E 's/.*users:\(\("([^"]+)".*/\1/;s/[^a-zA-Z0-9_-]//g' | head -c 40)
+      else
+        continue
       fi
     elif command -v lsof >/dev/null 2>&1; then
       if lsof -iTCP:"${p}" -sTCP:LISTEN -P -n >/dev/null 2>&1; then
-        in_use+=("${p}")
+        listener=$(lsof -iTCP:"${p}" -sTCP:LISTEN -P -n 2>/dev/null | awk 'NR==2{print $1}')
+      else
+        continue
       fi
+    else
+      continue
+    fi
+    if [[ "${p}" == "80" || "${p}" == "443" ]] && [[ "${listener}" =~ (nginx|haproxy|caddy|traefik) ]]; then
+      ok_coexist+=("${p}:${listener}")
+    else
+      in_use+=("${p}(${listener:-unknown})")
     fi
   done
+  local label="ports-free (80,443,${base}-$((base+9)))"
   if [[ ${#in_use[@]} -eq 0 ]]; then
-    _check "ports-free (80,443,3000-3005)" "pass" ""
+    local detail=""
+    [[ ${#ok_coexist[@]} -gt 0 ]] && detail=" — coexist OK: ${ok_coexist[*]}"
+    _check "${label}" "pass" "${detail}"
   else
-    _check "ports-free (80,443,3000-3005)" "fail" "Ports busy: ${in_use[*]} — stop conflicting services"
+    _check "${label}" "fail" "Ports busy: ${in_use[*]} — stop conflicting services or set a different ENV_PORT_BASE"
   fi
 }
 

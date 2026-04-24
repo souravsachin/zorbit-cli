@@ -1,0 +1,28 @@
+# ---------------------------------------------------------------------------
+# Dockerfile.web.j2 — rendered by package-bundle.sh
+# ---------------------------------------------------------------------------
+# Container: {{ENV_PREFIX}}-web   (e.g. zu-web)
+# Ports:     80, 443
+# Runtime:   nginx-alpine (NO PM2 — this bundle serves static SPA bundles).
+#
+# Contents: the pre-built Vite output of zorbit-unified-console.
+# ---------------------------------------------------------------------------
+
+FROM nginx:1.27-alpine
+
+# Remove default nginx config — we ship our own.
+RUN rm -rf /etc/nginx/conf.d/default.conf /usr/share/nginx/html/*
+
+# Copy pre-built unified console bundle.
+COPY 02_repos/zorbit-unified-console/dist/ /usr/share/nginx/html/
+
+# Shared nginx server config — proxies /api/* to peer bundles.
+COPY 02_repos/zorbit-cli/scripts/templates/nginx-precooked.conf \
+     /etc/nginx/conf.d/zorbit.conf
+
+# Health probe marker for docker healthcheck.
+RUN echo "ok" > /usr/share/nginx/html/healthz.txt
+
+EXPOSE 80 443
+
+CMD ["nginx", "-g", "daemon off;"]

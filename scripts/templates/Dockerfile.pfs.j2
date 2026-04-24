@@ -1,0 +1,205 @@
+# ---------------------------------------------------------------------------
+# Dockerfile.pfs.j2 — rendered by package-bundle.sh
+# ---------------------------------------------------------------------------
+# Container: {{ENV_PREFIX}}-pfs  (e.g. zu-pfs)
+# Ports:     3100-3199
+# Runtime:   PM2
+# ---------------------------------------------------------------------------
+
+FROM zorbit-pm2-base:1.0
+
+WORKDIR /app
+
+# Shared SDK
+COPY 02_repos/zorbit-sdk-node /app/zorbit-sdk-node
+
+# PFS services (alphabetical)
+COPY 02_repos/zorbit-pfs-ai_gateway/dist                         /app/zorbit-pfs-ai_gateway/dist
+COPY 02_repos/zorbit-pfs-ai_gateway/package.json                 /app/zorbit-pfs-ai_gateway/package.json
+COPY 02_repos/zorbit-pfs-ai_gateway/package-lock.json            /app/zorbit-pfs-ai_gateway/package-lock.json
+COPY 02_repos/zorbit-pfs-ai_gateway/zorbit-module-manifest.json  /app/zorbit-pfs-ai_gateway/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-analytics_reporting/dist                         /app/zorbit-pfs-analytics_reporting/dist
+COPY 02_repos/zorbit-pfs-analytics_reporting/package.json                 /app/zorbit-pfs-analytics_reporting/package.json
+COPY 02_repos/zorbit-pfs-analytics_reporting/package-lock.json            /app/zorbit-pfs-analytics_reporting/package-lock.json
+COPY 02_repos/zorbit-pfs-analytics_reporting/zorbit-module-manifest.json  /app/zorbit-pfs-analytics_reporting/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-api_integration/dist                         /app/zorbit-pfs-api_integration/dist
+COPY 02_repos/zorbit-pfs-api_integration/package.json                 /app/zorbit-pfs-api_integration/package.json
+COPY 02_repos/zorbit-pfs-api_integration/package-lock.json            /app/zorbit-pfs-api_integration/package-lock.json
+COPY 02_repos/zorbit-pfs-api_integration/zorbit-module-manifest.json  /app/zorbit-pfs-api_integration/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-chat/dist                         /app/zorbit-pfs-chat/dist
+COPY 02_repos/zorbit-pfs-chat/package.json                 /app/zorbit-pfs-chat/package.json
+COPY 02_repos/zorbit-pfs-chat/package-lock.json            /app/zorbit-pfs-chat/package-lock.json
+COPY 02_repos/zorbit-pfs-chat/zorbit-module-manifest.json  /app/zorbit-pfs-chat/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-datatable/dist                         /app/zorbit-pfs-datatable/dist
+COPY 02_repos/zorbit-pfs-datatable/package.json                 /app/zorbit-pfs-datatable/package.json
+COPY 02_repos/zorbit-pfs-datatable/package-lock.json            /app/zorbit-pfs-datatable/package-lock.json
+COPY 02_repos/zorbit-pfs-datatable/zorbit-module-manifest.json  /app/zorbit-pfs-datatable/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-doc_generator/dist                         /app/zorbit-pfs-doc_generator/dist
+COPY 02_repos/zorbit-pfs-doc_generator/package.json                 /app/zorbit-pfs-doc_generator/package.json
+COPY 02_repos/zorbit-pfs-doc_generator/package-lock.json            /app/zorbit-pfs-doc_generator/package-lock.json
+COPY 02_repos/zorbit-pfs-doc_generator/zorbit-module-manifest.json  /app/zorbit-pfs-doc_generator/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-file_storage/dist                         /app/zorbit-pfs-file_storage/dist
+COPY 02_repos/zorbit-pfs-file_storage/package.json                 /app/zorbit-pfs-file_storage/package.json
+COPY 02_repos/zorbit-pfs-file_storage/package-lock.json            /app/zorbit-pfs-file_storage/package-lock.json
+COPY 02_repos/zorbit-pfs-file_storage/zorbit-module-manifest.json  /app/zorbit-pfs-file_storage/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-file_viewer/dist                         /app/zorbit-pfs-file_viewer/dist
+COPY 02_repos/zorbit-pfs-file_viewer/package.json                 /app/zorbit-pfs-file_viewer/package.json
+COPY 02_repos/zorbit-pfs-file_viewer/package-lock.json            /app/zorbit-pfs-file_viewer/package-lock.json
+COPY 02_repos/zorbit-pfs-file_viewer/zorbit-module-manifest.json  /app/zorbit-pfs-file_viewer/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-form_builder/dist                         /app/zorbit-pfs-form_builder/dist
+COPY 02_repos/zorbit-pfs-form_builder/package.json                 /app/zorbit-pfs-form_builder/package.json
+COPY 02_repos/zorbit-pfs-form_builder/package-lock.json            /app/zorbit-pfs-form_builder/package-lock.json
+COPY 02_repos/zorbit-pfs-form_builder/zorbit-module-manifest.json  /app/zorbit-pfs-form_builder/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-integration/dist                         /app/zorbit-pfs-integration/dist
+COPY 02_repos/zorbit-pfs-integration/package.json                 /app/zorbit-pfs-integration/package.json
+COPY 02_repos/zorbit-pfs-integration/package-lock.json            /app/zorbit-pfs-integration/package-lock.json
+COPY 02_repos/zorbit-pfs-integration/zorbit-module-manifest.json  /app/zorbit-pfs-integration/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-interaction_recorder/dist                         /app/zorbit-pfs-interaction_recorder/dist
+COPY 02_repos/zorbit-pfs-interaction_recorder/package.json                 /app/zorbit-pfs-interaction_recorder/package.json
+COPY 02_repos/zorbit-pfs-interaction_recorder/package-lock.json            /app/zorbit-pfs-interaction_recorder/package-lock.json
+COPY 02_repos/zorbit-pfs-interaction_recorder/zorbit-module-manifest.json  /app/zorbit-pfs-interaction_recorder/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-kyc/dist                         /app/zorbit-pfs-kyc/dist
+COPY 02_repos/zorbit-pfs-kyc/package.json                 /app/zorbit-pfs-kyc/package.json
+COPY 02_repos/zorbit-pfs-kyc/package-lock.json            /app/zorbit-pfs-kyc/package-lock.json
+COPY 02_repos/zorbit-pfs-kyc/zorbit-module-manifest.json  /app/zorbit-pfs-kyc/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-medical_coding/dist                         /app/zorbit-pfs-medical_coding/dist
+COPY 02_repos/zorbit-pfs-medical_coding/package.json                 /app/zorbit-pfs-medical_coding/package.json
+COPY 02_repos/zorbit-pfs-medical_coding/package-lock.json            /app/zorbit-pfs-medical_coding/package-lock.json
+COPY 02_repos/zorbit-pfs-medical_coding/zorbit-module-manifest.json  /app/zorbit-pfs-medical_coding/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-notification/dist                         /app/zorbit-pfs-notification/dist
+COPY 02_repos/zorbit-pfs-notification/package.json                 /app/zorbit-pfs-notification/package.json
+COPY 02_repos/zorbit-pfs-notification/package-lock.json            /app/zorbit-pfs-notification/package-lock.json
+COPY 02_repos/zorbit-pfs-notification/zorbit-module-manifest.json  /app/zorbit-pfs-notification/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-payment_gateway/dist                         /app/zorbit-pfs-payment_gateway/dist
+COPY 02_repos/zorbit-pfs-payment_gateway/package.json                 /app/zorbit-pfs-payment_gateway/package.json
+COPY 02_repos/zorbit-pfs-payment_gateway/package-lock.json            /app/zorbit-pfs-payment_gateway/package-lock.json
+COPY 02_repos/zorbit-pfs-payment_gateway/zorbit-module-manifest.json  /app/zorbit-pfs-payment_gateway/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-pixel/dist                         /app/zorbit-pfs-pixel/dist
+COPY 02_repos/zorbit-pfs-pixel/package.json                 /app/zorbit-pfs-pixel/package.json
+COPY 02_repos/zorbit-pfs-pixel/package-lock.json            /app/zorbit-pfs-pixel/package-lock.json
+COPY 02_repos/zorbit-pfs-pixel/zorbit-module-manifest.json  /app/zorbit-pfs-pixel/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-realtime/dist                         /app/zorbit-pfs-realtime/dist
+COPY 02_repos/zorbit-pfs-realtime/package.json                 /app/zorbit-pfs-realtime/package.json
+COPY 02_repos/zorbit-pfs-realtime/package-lock.json            /app/zorbit-pfs-realtime/package-lock.json
+COPY 02_repos/zorbit-pfs-realtime/zorbit-module-manifest.json  /app/zorbit-pfs-realtime/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-rpa_integration/dist                         /app/zorbit-pfs-rpa_integration/dist
+COPY 02_repos/zorbit-pfs-rpa_integration/package.json                 /app/zorbit-pfs-rpa_integration/package.json
+COPY 02_repos/zorbit-pfs-rpa_integration/package-lock.json            /app/zorbit-pfs-rpa_integration/package-lock.json
+COPY 02_repos/zorbit-pfs-rpa_integration/zorbit-module-manifest.json  /app/zorbit-pfs-rpa_integration/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-rtc/dist                         /app/zorbit-pfs-rtc/dist
+COPY 02_repos/zorbit-pfs-rtc/package.json                 /app/zorbit-pfs-rtc/package.json
+COPY 02_repos/zorbit-pfs-rtc/package-lock.json            /app/zorbit-pfs-rtc/package-lock.json
+COPY 02_repos/zorbit-pfs-rtc/zorbit-module-manifest.json  /app/zorbit-pfs-rtc/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-rules_engine/dist                         /app/zorbit-pfs-rules_engine/dist
+COPY 02_repos/zorbit-pfs-rules_engine/package.json                 /app/zorbit-pfs-rules_engine/package.json
+COPY 02_repos/zorbit-pfs-rules_engine/package-lock.json            /app/zorbit-pfs-rules_engine/package-lock.json
+COPY 02_repos/zorbit-pfs-rules_engine/zorbit-module-manifest.json  /app/zorbit-pfs-rules_engine/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-secrets/dist                         /app/zorbit-pfs-secrets/dist
+COPY 02_repos/zorbit-pfs-secrets/package.json                 /app/zorbit-pfs-secrets/package.json
+COPY 02_repos/zorbit-pfs-secrets/package-lock.json            /app/zorbit-pfs-secrets/package-lock.json
+COPY 02_repos/zorbit-pfs-secrets/zorbit-module-manifest.json  /app/zorbit-pfs-secrets/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-seeder/dist                         /app/zorbit-pfs-seeder/dist
+COPY 02_repos/zorbit-pfs-seeder/package.json                 /app/zorbit-pfs-seeder/package.json
+COPY 02_repos/zorbit-pfs-seeder/package-lock.json            /app/zorbit-pfs-seeder/package-lock.json
+COPY 02_repos/zorbit-pfs-seeder/zorbit-module-manifest.json  /app/zorbit-pfs-seeder/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-verification/dist                         /app/zorbit-pfs-verification/dist
+COPY 02_repos/zorbit-pfs-verification/package.json                 /app/zorbit-pfs-verification/package.json
+COPY 02_repos/zorbit-pfs-verification/package-lock.json            /app/zorbit-pfs-verification/package-lock.json
+COPY 02_repos/zorbit-pfs-verification/zorbit-module-manifest.json  /app/zorbit-pfs-verification/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-voice/dist                         /app/zorbit-pfs-voice/dist
+COPY 02_repos/zorbit-pfs-voice/package.json                 /app/zorbit-pfs-voice/package.json
+COPY 02_repos/zorbit-pfs-voice/package-lock.json            /app/zorbit-pfs-voice/package-lock.json
+COPY 02_repos/zorbit-pfs-voice/zorbit-module-manifest.json  /app/zorbit-pfs-voice/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-voice_engine/dist                         /app/zorbit-pfs-voice_engine/dist
+COPY 02_repos/zorbit-pfs-voice_engine/package.json                 /app/zorbit-pfs-voice_engine/package.json
+COPY 02_repos/zorbit-pfs-voice_engine/package-lock.json            /app/zorbit-pfs-voice_engine/package-lock.json
+COPY 02_repos/zorbit-pfs-voice_engine/zorbit-module-manifest.json  /app/zorbit-pfs-voice_engine/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-white_label/dist                         /app/zorbit-pfs-white_label/dist
+COPY 02_repos/zorbit-pfs-white_label/package.json                 /app/zorbit-pfs-white_label/package.json
+COPY 02_repos/zorbit-pfs-white_label/package-lock.json            /app/zorbit-pfs-white_label/package-lock.json
+COPY 02_repos/zorbit-pfs-white_label/zorbit-module-manifest.json  /app/zorbit-pfs-white_label/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-workflow/dist                         /app/zorbit-pfs-workflow/dist
+COPY 02_repos/zorbit-pfs-workflow/package.json                 /app/zorbit-pfs-workflow/package.json
+COPY 02_repos/zorbit-pfs-workflow/package-lock.json            /app/zorbit-pfs-workflow/package-lock.json
+COPY 02_repos/zorbit-pfs-workflow/zorbit-module-manifest.json  /app/zorbit-pfs-workflow/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-workflow_engine/dist                         /app/zorbit-pfs-workflow_engine/dist
+COPY 02_repos/zorbit-pfs-workflow_engine/package.json                 /app/zorbit-pfs-workflow_engine/package.json
+COPY 02_repos/zorbit-pfs-workflow_engine/package-lock.json            /app/zorbit-pfs-workflow_engine/package-lock.json
+COPY 02_repos/zorbit-pfs-workflow_engine/zorbit-module-manifest.json  /app/zorbit-pfs-workflow_engine/zorbit-module-manifest.json
+
+COPY 02_repos/zorbit-pfs-zmb_factory/dist                         /app/zorbit-pfs-zmb_factory/dist
+COPY 02_repos/zorbit-pfs-zmb_factory/package.json                 /app/zorbit-pfs-zmb_factory/package.json
+COPY 02_repos/zorbit-pfs-zmb_factory/package-lock.json            /app/zorbit-pfs-zmb_factory/package-lock.json
+COPY 02_repos/zorbit-pfs-zmb_factory/zorbit-module-manifest.json  /app/zorbit-pfs-zmb_factory/zorbit-module-manifest.json
+
+RUN set -eux; \
+    for svc in \
+      zorbit-pfs-ai_gateway \
+      zorbit-pfs-analytics_reporting \
+      zorbit-pfs-api_integration \
+      zorbit-pfs-chat \
+      zorbit-pfs-datatable \
+      zorbit-pfs-doc_generator \
+      zorbit-pfs-file_storage \
+      zorbit-pfs-file_viewer \
+      zorbit-pfs-form_builder \
+      zorbit-pfs-integration \
+      zorbit-pfs-interaction_recorder \
+      zorbit-pfs-kyc \
+      zorbit-pfs-medical_coding \
+      zorbit-pfs-notification \
+      zorbit-pfs-payment_gateway \
+      zorbit-pfs-pixel \
+      zorbit-pfs-realtime \
+      zorbit-pfs-rpa_integration \
+      zorbit-pfs-rtc \
+      zorbit-pfs-rules_engine \
+      zorbit-pfs-secrets \
+      zorbit-pfs-seeder \
+      zorbit-pfs-verification \
+      zorbit-pfs-voice \
+      zorbit-pfs-voice_engine \
+      zorbit-pfs-white_label \
+      zorbit-pfs-workflow \
+      zorbit-pfs-workflow_engine \
+      zorbit-pfs-zmb_factory ; do \
+      if [ -f "/app/${svc}/package.json" ]; then \
+        echo "→ installing deps for ${svc}"; \
+        (cd "/app/${svc}" && npm ci --omit=dev --no-audit --no-fund); \
+      fi; \
+    done
+
+COPY 02_repos/zorbit-cli/scripts/templates/ecosystems/pfs.ecosystem.config.js \
+     /app/ecosystem.config.js
+
+WORKDIR /app
+EXPOSE 3100-3199
+
+CMD ["pm2-runtime", "ecosystem.config.js"]
