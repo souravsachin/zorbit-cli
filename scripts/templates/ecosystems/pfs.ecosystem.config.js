@@ -1,6 +1,10 @@
 /**
  * PM2 ecosystem for the `pfs` bundle container.
  * Container: {env_prefix}-pfs   Ports: 3100-3199
+ *
+ * CPU PROTECTION (2026-04-25, fix/F2-cpu-protection):
+ *   restart-throttle + node heap cap baked into mkApp() so every entry inherits.
+ *   See core.ecosystem.config.js header for full rationale.
  */
 const mkApp = (name, port) => ({
   name,
@@ -10,6 +14,11 @@ const mkApp = (name, port) => ({
   exec_mode: 'fork',
   env: { NODE_ENV: 'production', PORT: port },
   max_memory_restart: '256M',
+  min_uptime: '10s',
+  max_restarts: 10,
+  restart_delay: 4000,
+  exp_backoff_restart_delay: 100,
+  node_args: '--max-old-space-size=512',
 });
 
 module.exports = {

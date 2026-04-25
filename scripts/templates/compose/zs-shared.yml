@@ -7,6 +7,11 @@
 # Networks:
 #   zs-shared-net    — attached by every env-bundle container that talks to shared
 # ---------------------------------------------------------------------------
+# CPU PROTECTION (2026-04-25, fix/F2-cpu-protection):
+#   Each service has both `deploy.resources` (Swarm-aware tooling) and
+#   non-swarm `cpus`/`mem_limit`/`mem_reservation` fields so that `docker
+#   compose up` (Compose v2, non-swarm) actually enforces the caps.
+# ---------------------------------------------------------------------------
 
 version: "3.8"
 
@@ -46,6 +51,18 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    # CPU PROTECTION
+    cpus: 1.0
+    mem_limit: 1g
+    mem_reservation: 256m
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   # -------------------------------------------------------------------------
   # zs-mongo — MongoDB 7 (for datatable, form_builder, white_label, etc.)
@@ -68,6 +85,18 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    # CPU PROTECTION
+    cpus: 1.0
+    mem_limit: 1g
+    mem_reservation: 256m
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   # -------------------------------------------------------------------------
   # zs-kafka — Kafka 3.7 in KRaft mode (no ZooKeeper)
@@ -106,6 +135,18 @@ services:
       timeout: 5s
       retries: 8
       start_period: 60s
+    # CPU PROTECTION
+    cpus: 1.0
+    mem_limit: 1g
+    mem_reservation: 256m
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   # -------------------------------------------------------------------------
   # zs-redis — Redis 7 (cache + pub/sub)
@@ -126,6 +167,18 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    # CPU PROTECTION
+    cpus: 0.5
+    mem_limit: 512m
+    mem_reservation: 128m
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
 
   # -------------------------------------------------------------------------
   # zs-nginx — shared front-door (wildcard onezippy.ai cert, Host-based routing)
@@ -149,6 +202,18 @@ services:
       interval: 15s
       timeout: 3s
       retries: 5
+    # CPU PROTECTION
+    cpus: 0.5
+    mem_limit: 256m
+    mem_reservation: 64m
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
 
   # -------------------------------------------------------------------------
   # zs-zeebe — Camunda 8 (kept available for future workflow needs; the
