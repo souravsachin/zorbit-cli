@@ -13,6 +13,9 @@ WORKDIR /app
 # Shared SDK
 COPY 02_repos/zorbit-sdk-node /app/zorbit-sdk-node
 
+# PRUNE_SDK_PEER_DEPS: nuke peer-dep duplicates so SDK uses each service's own copies via --preserve-symlinks
+RUN cd /app/zorbit-sdk-node && (npm install --omit=dev --no-save --no-audit --no-fund 2>&1 | tail -3) && rm -rf node_modules/@nestjs node_modules/passport node_modules/passport-jwt node_modules/typeorm node_modules/reflect-metadata node_modules/rxjs
+
 # Apps (alphabetical)
 COPY 02_repos/sample-customer-service/dist                         /app/sample-customer-service/dist
 COPY 02_repos/sample-customer-service/package.json                 /app/sample-customer-service/package.json
@@ -197,7 +200,7 @@ RUN set -eux; \
       zorbit-portal-prospect ; do \
       if [ -f "/app/${svc}/package.json" ]; then \
         echo "→ installing deps for ${svc}"; \
-        (cd "/app/${svc}" && npm ci --omit=dev --no-audit --no-fund); \
+        (cd "/app/${svc}" && npm install --omit=dev --no-save --no-audit --no-fund); \
       fi; \
     done
 

@@ -8,7 +8,7 @@ const mkApp = (name, port) => ({
   cwd: `/app/${name}`,
   instances: 1,
   exec_mode: 'fork',
-  env: { NODE_ENV: 'production', PORT: port },
+  env: { NODE_ENV: 'production', NODE_OPTIONS: '--preserve-symlinks', PORT: port },
   max_memory_restart: '512M',
 });
 

@@ -23,6 +23,9 @@ WORKDIR /app
 # ---------------------------------------------------------------------------
 COPY 02_repos/zorbit-sdk-node /app/zorbit-sdk-node
 
+# PRUNE_SDK_PEER_DEPS: nuke peer-dep duplicates so SDK uses each service's own copies via --preserve-symlinks
+RUN cd /app/zorbit-sdk-node && (npm install --omit=dev --no-save --no-audit --no-fund 2>&1 | tail -3) && rm -rf node_modules/@nestjs node_modules/passport node_modules/passport-jwt node_modules/typeorm node_modules/reflect-metadata node_modules/rxjs
+
 # ---------------------------------------------------------------------------
 # Services (alphabetical). Dual-copy-prune pattern per service:
 #   1. copy dist/ + package*.json + manifest
@@ -106,7 +109,7 @@ RUN set -eux; \
       zorbit-pii-vault ; do \
       if [ -f "/app/${svc}/package.json" ]; then \
         echo "→ installing deps for ${svc}"; \
-        (cd "/app/${svc}" && npm ci --omit=dev --no-audit --no-fund); \
+        (cd "/app/${svc}" && npm install --omit=dev --no-save --no-audit --no-fund); \
       fi; \
     done
 
