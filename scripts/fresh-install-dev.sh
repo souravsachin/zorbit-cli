@@ -100,22 +100,42 @@ gchat() {
     >/dev/null 2>&1 || true
 }
 
-# Run a script on VM 110 by writing it locally, scp via dev-sandbox, then ssh.
+# Detect whether we're running ON dev-sandbox itself (single-hop to VM 110)
+# or on the laptop (two-hop: laptop -> dev-sandbox -> VM 110).
+ON_SANDBOX=false
+if [[ "$(hostname)" == "dev-sandbox" ]]; then
+  ON_SANDBOX=true
+fi
+
+# Run a script on VM 110.
+# - From laptop: scp to dev-sandbox, then ssh-scp into VM 110, then ssh-bash
+# - From dev-sandbox: scp directly to VM 110, then ssh-bash
 # Args: <local-script-path>
 # Stdout: VM 110 stdout
 run_on_vm() {
   local local_script="$1"
   local remote="/tmp/_fi-$(basename "$local_script")"
-  scp -q "$local_script" "${DEV_SANDBOX}:${remote}"
-  ssh "$DEV_SANDBOX" "scp -q -o StrictHostKeyChecking=accept-new ${remote} ${VM_USER}@${VM_IP}:${remote} && ssh -o StrictHostKeyChecking=accept-new ${VM_USER}@${VM_IP} bash ${remote}"
+  if $ON_SANDBOX; then
+    scp -q -o StrictHostKeyChecking=accept-new "$local_script" "${VM_USER}@${VM_IP}:${remote}"
+    ssh -o StrictHostKeyChecking=accept-new "${VM_USER}@${VM_IP}" "bash ${remote}"
+  else
+    scp -q "$local_script" "${DEV_SANDBOX}:${remote}"
+    ssh "$DEV_SANDBOX" "scp -q -o StrictHostKeyChecking=accept-new ${remote} ${VM_USER}@${VM_IP}:${remote} && ssh -o StrictHostKeyChecking=accept-new ${VM_USER}@${VM_IP} bash ${remote}"
+  fi
 }
 
-# Run on dev-sandbox (no second hop)
+# Run on dev-sandbox.
+# - From laptop: scp + ssh to dev-sandbox
+# - From dev-sandbox: just bash locally
 run_on_sandbox() {
   local local_script="$1"
   local remote="/tmp/_fi-$(basename "$local_script")"
-  scp -q "$local_script" "${DEV_SANDBOX}:${remote}"
-  ssh "$DEV_SANDBOX" "bash ${remote}"
+  if $ON_SANDBOX; then
+    bash "$local_script"
+  else
+    scp -q "$local_script" "${DEV_SANDBOX}:${remote}"
+    ssh "$DEV_SANDBOX" "bash ${remote}"
+  fi
 }
 
 # Numeric ordering of gate name (L0..L9 -> 0..9)
@@ -157,11 +177,15 @@ banner() {
 # ---- Gate L0: preflight -----------------------------------------------------
 gate_l0() {
   banner "L0 — Preflight (SSH reachable + zs-pg/mongo/kafka up)"
-  if ssh -o ConnectTimeout=10 "$DEV_SANDBOX" 'echo ok' >/dev/null 2>&1; then
-    log "  dev-sandbox reachable"
+  if $ON_SANDBOX; then
+    log "  running ON dev-sandbox itself (single-hop mode)"
   else
-    mark_fail L0 "dev-sandbox SSH unreachable"
-    return 1
+    if ssh -o ConnectTimeout=10 "$DEV_SANDBOX" 'echo ok' >/dev/null 2>&1; then
+      log "  dev-sandbox reachable"
+    else
+      mark_fail L0 "dev-sandbox SSH unreachable"
+      return 1
+    fi
   fi
 
   cat > /tmp/_fi-l0.sh <<'PROBE'
@@ -284,6 +308,10 @@ CHECK
     fi
   fi
   # Rebuild path — laptop only.
+  if $ON_SANDBOX; then
+    mark_warn L3 "--rebuild not supported on dev-sandbox; falling back to cached bundles"
+    return 0
+  fi
   if [[ ! -d "$ZORBIT_ROOT_LAPTOP/02_repos/zorbit-cli" ]]; then
     mark_fail L3 "rebuild requested but ZORBIT_ROOT_LAPTOP=${ZORBIT_ROOT_LAPTOP} missing"
     return 1
