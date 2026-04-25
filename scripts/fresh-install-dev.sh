@@ -479,7 +479,8 @@ SCRIPT_SRC=${ZORBIT_ROOT_SANDBOX}/02_repos/zorbit-cli/scripts/post-deploy-bootst
 TRANS_SRC=${ZORBIT_ROOT_SANDBOX}/02_repos/zorbit-core/platform-spec/slug-translations.json
 PATCHER_SRC=${ZORBIT_ROOT_SANDBOX}/02_repos/zorbit-cli/scripts/patch-placement-to-slugs.py
 
-ssh -o StrictHostKeyChecking=accept-new ${VM_USER}@${VM_IP} "mkdir -p /etc/zorbit/\${ENV} /opt/zorbit-cli/scripts" 2>/dev/null
+# /etc/zorbit/{env,scripts} is admin-owned on VM 110 — no sudo needed.
+ssh -o StrictHostKeyChecking=accept-new ${VM_USER}@${VM_IP} "mkdir -p /etc/zorbit/\${ENV} /etc/zorbit/scripts" 2>/dev/null
 
 # super_admins.json
 if [[ -f \$SA_SRC ]]; then
@@ -488,13 +489,14 @@ else
   echo STAGE_MISSING_SA_SRC=\$SA_SRC
 fi
 
-# post-deploy-bootstrap.sh + companion files
+# post-deploy-bootstrap.sh + companion files (staged under /etc/zorbit/scripts/)
 if [[ -f \$SCRIPT_SRC ]]; then
-  scp -q -o StrictHostKeyChecking=accept-new \$SCRIPT_SRC ${VM_USER}@${VM_IP}:/opt/zorbit-cli/scripts/post-deploy-bootstrap.sh && echo SCRIPT_OK
+  scp -q -o StrictHostKeyChecking=accept-new \$SCRIPT_SRC ${VM_USER}@${VM_IP}:/etc/zorbit/scripts/post-deploy-bootstrap.sh && \
+    ssh -o StrictHostKeyChecking=accept-new ${VM_USER}@${VM_IP} "chmod +x /etc/zorbit/scripts/post-deploy-bootstrap.sh" && echo SCRIPT_OK
 else
   echo STAGE_MISSING_SCRIPT=\$SCRIPT_SRC
 fi
-[[ -f \$PATCHER_SRC ]] && scp -q -o StrictHostKeyChecking=accept-new \$PATCHER_SRC ${VM_USER}@${VM_IP}:/opt/zorbit-cli/scripts/patch-placement-to-slugs.py
+[[ -f \$PATCHER_SRC ]] && scp -q -o StrictHostKeyChecking=accept-new \$PATCHER_SRC ${VM_USER}@${VM_IP}:/etc/zorbit/scripts/patch-placement-to-slugs.py
 [[ -f \$TRANS_SRC ]] && scp -q -o StrictHostKeyChecking=accept-new \$TRANS_SRC ${VM_USER}@${VM_IP}:/etc/zorbit/\${ENV}/slug-translations.json
 echo "STAGE_OK"
 EOF
@@ -515,7 +517,7 @@ if [[ ! -f \$SA_JSON ]]; then
 fi
 [[ -f \$SA_JSON ]] || { echo "MISSING_SA_JSON"; exit 1; }
 SCRIPT=
-for cand in /opt/zorbit-cli/scripts/post-deploy-bootstrap.sh /home/admin/zorbit-dev/source/zorbit/02_repos/zorbit-cli/scripts/post-deploy-bootstrap.sh /etc/zorbit/scripts/post-deploy-bootstrap.sh; do
+for cand in /etc/zorbit/scripts/post-deploy-bootstrap.sh /opt/zorbit-cli/scripts/post-deploy-bootstrap.sh /home/admin/zorbit-dev/source/zorbit/02_repos/zorbit-cli/scripts/post-deploy-bootstrap.sh; do
   [[ -x \$cand || -f \$cand ]] && SCRIPT=\$cand && break
 done
 [[ -z \$SCRIPT ]] && { echo "MISSING_BOOTSTRAP_SCRIPT"; exit 1; }
