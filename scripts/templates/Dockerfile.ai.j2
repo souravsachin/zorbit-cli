@@ -28,6 +28,24 @@ RUN set -eux; \
       fi; \
     done
 
+# M5 / Strategy C (2026-04-26): prune SDK peer-dep duplicates so Node
+# resolves @nestjs/* + typeorm + rxjs from the consumer's own node_modules,
+# not the SDK's. See 00_docs/platform/sdk-peer-dep-strategy.md +
+# Dockerfile.core.j2 for full rationale.
+RUN set -eux; \
+    for svc in /app/zorbit-*; do \
+      sdk_nm="${svc}/node_modules/@zorbit-platform/sdk-node/node_modules"; \
+      if [ -d "${sdk_nm}" ]; then \
+        echo "→ pruning SDK nested peer-deps for ${svc##*/}"; \
+        rm -rf "${sdk_nm}/@nestjs"          \
+               "${sdk_nm}/typeorm"           \
+               "${sdk_nm}/reflect-metadata"  \
+               "${sdk_nm}/rxjs"              \
+               "${sdk_nm}/passport"          \
+               "${sdk_nm}/passport-jwt"; \
+      fi; \
+    done
+
 COPY 02_repos/zorbit-cli/scripts/templates/ecosystems/ai.ecosystem.config.js \
      /app/ecosystem.config.js
 

@@ -111,6 +111,43 @@ RUN set -eux; \
     done
 
 # ---------------------------------------------------------------------------
+# M5 / Strategy C (2026-04-26): explicitly prune SDK peer-dep duplicates.
+#
+# Why: the SDK is COPY'd via `file:`-ref in every consumer's package.json.
+# npm symlinks the SDK directory into <consumer>/node_modules/@zorbit-platform/sdk-node.
+# Node's resolver follows the symlink real-path, so it walks into the SDK's
+# OWN node_modules/ and finds @nestjs/common, @nestjs/typeorm, typeorm,
+# reflect-metadata, rxjs there BEFORE the consumer's top-level copy.
+# Two runtime instances of @nestjs/* + typeorm collide → undefinedRepository
+# DI failures + Symbol-mismatch on @Injectable metadata. This is the
+# class of restart-loop crash cycle-103 documented in 24+ services.
+#
+# The SDK's own postinstall (scripts/prune-peer-deps.js) handles this
+# when the SDK is INSTALLED. But here it is COPY'd raw — npm never fires
+# the postinstall hook. This RUN step belt-and-braces the prune.
+#
+# Scope is fully contained: /app/<svc>/node_modules/@zorbit-platform/sdk-node/node_modules/<peer>/
+# Never touches /app/<svc>/node_modules/<peer>/ (the consumer's own copy).
+#
+# See 00_docs/platform/sdk-peer-dep-strategy.md for the trade-off
+# discussion (Strategy A vs B vs C). Owner picks A/B/C — this PR
+# proposes C as a draft.
+# ---------------------------------------------------------------------------
+RUN set -eux; \
+    for svc in /app/zorbit-*; do \
+      sdk_nm="${svc}/node_modules/@zorbit-platform/sdk-node/node_modules"; \
+      if [ -d "${sdk_nm}" ]; then \
+        echo "→ pruning SDK nested peer-deps for ${svc##*/}"; \
+        rm -rf "${sdk_nm}/@nestjs"          \
+               "${sdk_nm}/typeorm"           \
+               "${sdk_nm}/reflect-metadata"  \
+               "${sdk_nm}/rxjs"              \
+               "${sdk_nm}/passport"          \
+               "${sdk_nm}/passport-jwt"; \
+      fi; \
+    done
+
+# ---------------------------------------------------------------------------
 # PM2 ecosystem — describes every process in this bundle.
 # Rendered into the bundle at build time by scripts/render-ecosystem.sh;
 # for now ship the canonical core ecosystem alongside the Dockerfile.
