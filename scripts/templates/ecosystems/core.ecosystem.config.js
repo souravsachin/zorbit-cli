@@ -14,7 +14,7 @@ module.exports = {
       cwd: '/app/zorbit-audit',
       instances: 1,
       exec_mode: 'fork',
-      env: { NODE_ENV: 'production', PORT: 3006 },
+      env: { NODE_ENV: 'production', NODE_OPTIONS: '--preserve-symlinks', PORT: 3006 },
       max_memory_restart: '256M',
     },
     {
@@ -23,7 +23,7 @@ module.exports = {
       cwd: '/app/zorbit-authorization',
       instances: 1,
       exec_mode: 'fork',
-      env: { NODE_ENV: 'production', PORT: 3002 },
+      env: { NODE_ENV: 'production', NODE_OPTIONS: '--preserve-symlinks', PORT: 3002 },
       max_memory_restart: '256M',
     },
     {
@@ -32,7 +32,7 @@ module.exports = {
       cwd: '/app/zorbit-cor-deployment_registry',
       instances: 1,
       exec_mode: 'fork',
-      env: { NODE_ENV: 'production', PORT: 3021 },
+      env: { NODE_ENV: 'production', NODE_OPTIONS: '--preserve-symlinks', PORT: 3021 },
       max_memory_restart: '256M',
     },
     {
@@ -41,7 +41,7 @@ module.exports = {
       cwd: '/app/zorbit-cor-module_registry',
       instances: 1,
       exec_mode: 'fork',
-      env: { NODE_ENV: 'production', PORT: 3020 },
+      env: { NODE_ENV: 'production', NODE_OPTIONS: '--preserve-symlinks', PORT: 3020 },
       max_memory_restart: '256M',
     },
     {
@@ -50,7 +50,7 @@ module.exports = {
       cwd: '/app/zorbit-cor-observability',
       instances: 1,
       exec_mode: 'fork',
-      env: { NODE_ENV: 'production', PORT: 3022 },
+      env: { NODE_ENV: 'production', NODE_OPTIONS: '--preserve-symlinks', PORT: 3022 },
       max_memory_restart: '256M',
     },
     {
@@ -59,7 +59,7 @@ module.exports = {
       cwd: '/app/zorbit-cor-secrets_vault',
       instances: 1,
       exec_mode: 'fork',
-      env: { NODE_ENV: 'production', PORT: 3023 },
+      env: { NODE_ENV: 'production', NODE_OPTIONS: '--preserve-symlinks', PORT: 3023 },
       max_memory_restart: '256M',
     },
     {
@@ -68,7 +68,7 @@ module.exports = {
       cwd: '/app/zorbit-event_bus',
       instances: 1,
       exec_mode: 'fork',
-      env: { NODE_ENV: 'production', PORT: 3004 },
+      env: { NODE_ENV: 'production', NODE_OPTIONS: '--preserve-symlinks', PORT: 3004 },
       max_memory_restart: '256M',
     },
     {
@@ -77,7 +77,7 @@ module.exports = {
       cwd: '/app/zorbit-identity',
       instances: 1,
       exec_mode: 'fork',
-      env: { NODE_ENV: 'production', PORT: 3001 },
+      env: { NODE_ENV: 'production', NODE_OPTIONS: '--preserve-symlinks', PORT: 3001 },
       max_memory_restart: '256M',
     },
     {
@@ -86,7 +86,7 @@ module.exports = {
       cwd: '/app/zorbit-navigation',
       instances: 1,
       exec_mode: 'fork',
-      env: { NODE_ENV: 'production', PORT: 3003 },
+      env: { NODE_ENV: 'production', NODE_OPTIONS: '--preserve-symlinks', PORT: 3003 },
       max_memory_restart: '256M',
     },
     {
@@ -95,7 +95,7 @@ module.exports = {
       cwd: '/app/zorbit-pii-vault',
       instances: 1,
       exec_mode: 'fork',
-      env: { NODE_ENV: 'production', PORT: 3005 },
+      env: { NODE_ENV: 'production', NODE_OPTIONS: '--preserve-symlinks', PORT: 3005 },
       max_memory_restart: '256M',
     },
   ],

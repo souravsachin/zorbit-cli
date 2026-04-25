@@ -8,7 +8,7 @@ const mkApp = (name, port) => ({
   cwd: `/app/${name}`,
   instances: 1,
   exec_mode: 'fork',
-  env: { NODE_ENV: 'production', PORT: port },
+  env: { NODE_ENV: 'production', NODE_OPTIONS: '--preserve-symlinks', PORT: port },
   max_memory_restart: '256M',
 });
 
@@ -17,7 +17,6 @@ module.exports = {
     mkApp('sample-customer-service',                    3200),
     mkApp('zorbit-app-broker',                          3201),
     mkApp('zorbit-app-claims_core',                     3202),
-    mkApp('zorbit-app-claims_intake',                   3203),
     mkApp('zorbit-app-hi_claim_adjudication_workflow',  3204),
     mkApp('zorbit-app-hi_claim_decisioning',            3205),
     mkApp('zorbit-app-hi_claim_initiation',             3206),
@@ -35,7 +34,6 @@ module.exports = {
     mkApp('zorbit-app-pcg4',                            3218),
     mkApp('zorbit-app-pcg5',                            3219),
     mkApp('zorbit-app-product_pricing',                 3220),
-    mkApp('zorbit-app-prospect_portal',                 3221),
     mkApp('zorbit-app-retail_banking_demo',             3222),
     mkApp('zorbit-app-sample',                          3223),
     mkApp('zorbit-app-sample_module',                   3224),
@@ -43,7 +41,5 @@ module.exports = {
     mkApp('zorbit-app-uw_workflow',                     3226),
     mkApp('zorbit-app-wealth_mgmt_demo',                3227),
     mkApp('zorbit-app-zmb_selftest',                    3228),
-    mkApp('zorbit-portal-customer',                     3229),
-    mkApp('zorbit-portal-prospect',                     3230),
   ],
 };

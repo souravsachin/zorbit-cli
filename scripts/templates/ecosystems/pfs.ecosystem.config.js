@@ -8,7 +8,7 @@ const mkApp = (name, port) => ({
   cwd: `/app/${name}`,
   instances: 1,
   exec_mode: 'fork',
-  env: { NODE_ENV: 'production', PORT: port },
+  env: { NODE_ENV: 'production', NODE_OPTIONS: '--preserve-symlinks', PORT: port },
   max_memory_restart: '256M',
 });
 
@@ -40,7 +40,6 @@ module.exports = {
     mkApp('zorbit-pfs-voice',                 3123),
     mkApp('zorbit-pfs-voice_engine',          3124),
     mkApp('zorbit-pfs-white_label',           3125),
-    mkApp('zorbit-pfs-workflow',              3126),
     mkApp('zorbit-pfs-workflow_engine',       3127),
     mkApp('zorbit-pfs-zmb_factory',           3128),
   ],
