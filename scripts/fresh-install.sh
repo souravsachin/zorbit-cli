@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
-# fresh-install-dev.sh
+# fresh-install.sh — generic across env-prefix (ze / zq / zd / zp / ...)
 # =============================================================================
-# One-command L0..L9 fresh-install wrapper for the Zorbit dev environment on
-# VM 110 (zorbit-nonprod-01, 10.10.10.20). Designed for the twice-daily
-# fresh-install requirement (owner directive 2026-04-25).
+# One-command L0..L9 fresh-install wrapper for any Zorbit environment.
+# Renamed from fresh-install-dev.sh on 2026-04-25 (MSG-031): the script must
+# be env-agnostic so we can deploy qa / demo / prod with the same wrapper.
+# Pass --env-prefix and --vm-ip explicitly (or accept the per-env defaults).
 #
 # The script orchestrates:
 #   L0 — preflight (dev-sandbox + VM 110 + zs-pg/mongo/kafka up)
@@ -41,7 +42,7 @@ START_AT="L0"
 BROADCAST=true
 MIN_READY=40
 VM_USER="admin"
-VM_IP="10.10.10.20"
+VM_IP=""           # overridden by --vm-ip OR derived from ENV_PREFIX below
 DEV_SANDBOX="dev-sandbox"
 LAPTOP_BUNDLES_DIR_DEFAULT="/Users/s/workspace/zorbit/bundles/v0.1.0"
 ZORBIT_ROOT_LAPTOP="${ZORBIT_ROOT:-/Users/s/workspace/zorbit}"
@@ -56,6 +57,8 @@ PUBLIC_URL_DEFAULT="https://zorbit-dev.onezippy.ai"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --env-prefix)    ENV_PREFIX="$2"; shift 2 ;;
+    --vm-ip)         VM_IP="$2"; shift 2 ;;
+    --public-url)    PUBLIC_URL="$2"; shift 2 ;;
     --rebuild)       REBUILD=true; shift ;;
     --skip-build)    REBUILD=false; shift ;;
     --gate)          START_AT="$2"; shift 2 ;;
@@ -66,14 +69,22 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Public URL derives from env prefix (ze=>dev, zq=>qa, zd=>demo, zp=>prod).
+# Per-env defaults — both PUBLIC_URL and VM_IP can be overridden via flags.
+# This script is GENERIC across envs (ze/zq/zd/zp/...) per owner directive
+# 2026-04-25 (MSG-031). Add new envs by extending the case below or pass
+# --vm-ip + --public-url explicitly.
 case "$ENV_PREFIX" in
-  ze) PUBLIC_URL="https://zorbit-dev.onezippy.ai" ;;
-  zq) PUBLIC_URL="https://zorbit-qa.onezippy.ai" ;;
-  zd) PUBLIC_URL="https://zorbit-demo.onezippy.ai" ;;
-  zp) PUBLIC_URL="https://zorbit-prod.onezippy.ai" ;;
-  *)  PUBLIC_URL="$PUBLIC_URL_DEFAULT" ;;
+  ze) : "${PUBLIC_URL:=https://zorbit-dev.onezippy.ai}";  : "${VM_IP:=10.10.10.20}" ;;
+  zq) : "${PUBLIC_URL:=https://zorbit-qa.onezippy.ai}";   : "${VM_IP:=10.10.10.21}" ;;
+  zd) : "${PUBLIC_URL:=https://zorbit-demo.onezippy.ai}"; : "${VM_IP:=10.10.10.22}" ;;
+  zp) : "${PUBLIC_URL:=https://zorbit-prod.onezippy.ai}"; : "${VM_IP:=10.10.10.23}" ;;
+  *)  : "${PUBLIC_URL:=$PUBLIC_URL_DEFAULT}" ;;
 esac
+
+if [[ -z "$VM_IP" ]]; then
+  echo "ERROR: --vm-ip required for unknown env-prefix '$ENV_PREFIX' (no default mapping)." >&2
+  exit 2
+fi
 
 TS="$(date +%Y%m%d-%H%M%S)"
 LOG="/tmp/fresh-install-${ENV_PREFIX}-${TS}.log"

@@ -88,6 +88,10 @@ COPY 02_repos/zorbit-pfs-payment_gateway/dist                         /app/zorbi
 COPY 02_repos/zorbit-pfs-payment_gateway/package.json                 /app/zorbit-pfs-payment_gateway/package.json
 COPY 02_repos/zorbit-pfs-payment_gateway/package-lock.json            /app/zorbit-pfs-payment_gateway/package-lock.json
 COPY 02_repos/zorbit-pfs-payment_gateway/zorbit-module-manifest.json  /app/zorbit-pfs-payment_gateway/zorbit-module-manifest.json
+# entities/ ships *.entity.json sidecars read at NestJS module-decoration time
+# by buildEntityMap(); without these, getRepositoryToken(undefined) throws a
+# CircularDependencyException at boot. Soldier C 2026-04-25.
+COPY 02_repos/zorbit-pfs-payment_gateway/entities                     /app/zorbit-pfs-payment_gateway/entities
 
 COPY 02_repos/zorbit-pfs-pixel/dist                         /app/zorbit-pfs-pixel/dist
 COPY 02_repos/zorbit-pfs-pixel/package.json                 /app/zorbit-pfs-pixel/package.json
@@ -201,5 +205,9 @@ COPY 02_repos/zorbit-cli/scripts/templates/ecosystems/pfs.ecosystem.config.js \
 
 WORKDIR /app
 EXPOSE 3100-3199
+
+# Healthcheck: probe the bundle's first PM2 service (port 3100). If unreachable for 3 consecutive checks, mark unhealthy.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
+  CMD curl -fsSk http://localhost:3100/api/v1/G/health || exit 1
 
 CMD ["pm2-runtime", "ecosystem.config.js"]

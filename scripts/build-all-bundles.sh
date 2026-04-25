@@ -35,6 +35,26 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 BUNDLES=(core pfs apps ai web)
 
+# -------------------------------------------------------------------------
+# Preflight gate — fail fast if any Mongoose schema has a @Prop() decorator
+# whose TS field type is ambiguous (union, any, Record<>) without `type:`.
+# Such schemas crash NestJS at boot with CannotDetermineTypeError. Wired in
+# 2026-04-25 by Soldier B after twice-daily fresh installs regressed.
+# -------------------------------------------------------------------------
+echo "==> Preflight: Mongoose @Prop() schema check"
+bash "${SCRIPT_DIR}/preflight-mongoose-check.sh" \
+  || { echo "FAILED preflight: fix offending @Prop() decorators above"; exit 1; }
+
+# -------------------------------------------------------------------------
+# Soldier C — silent-fail forensics (2026-04-25)
+# Ran when ~15 services were stuck in a crash-restart loop with EMPTY pm2
+# stderr but real boot-time errors. Each guard codifies one root cause so
+# the next install fails LOUDLY rather than silently.
+# -------------------------------------------------------------------------
+echo "==> Preflight: silent-fail service guards"
+bash "${SCRIPT_DIR}/preflight-services-check.sh" \
+  || { echo "FAILED preflight: fix the silent-fail guards above"; exit 1; }
+
 echo "==> Building ${#BUNDLES[@]} bundles for env=${ENV_PREFIX} version=${VERSION} platform=${PLATFORM}"
 START=$(date +%s)
 

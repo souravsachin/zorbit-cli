@@ -34,4 +34,7 @@ COPY 02_repos/zorbit-cli/scripts/templates/ecosystems/ai.ecosystem.config.js \
 WORKDIR /app
 EXPOSE 3600-3799
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
+  CMD curl -fsSk http://localhost:3600/api/v1/G/health || exit 1
+
 CMD ["pm2-runtime", "ecosystem.config.js"]
