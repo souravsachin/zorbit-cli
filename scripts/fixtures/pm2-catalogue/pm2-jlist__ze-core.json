@@ -1,0 +1,65 @@
+[
+  {
+    "name": "zorbit-cor-identity",
+    "pm2_env": {
+      "status": "online",
+      "restart_time": 3,
+      "pm_uptime": 1777140000000,
+      "env": { "PORT": "3001" }
+    }
+  },
+  {
+    "name": "zorbit-cor-authorization",
+    "pm2_env": {
+      "status": "online",
+      "restart_time": 5,
+      "pm_uptime": 1777140100000,
+      "env": { "PORT": "3002" }
+    }
+  },
+  {
+    "name": "zorbit-cor-navigation",
+    "pm2_env": {
+      "status": "online",
+      "restart_time": 0,
+      "pm_uptime": 1777140000000,
+      "env": { "PORT": "3003" }
+    }
+  },
+  {
+    "name": "zorbit-event_bus",
+    "pm2_env": {
+      "status": "waiting restart",
+      "restart_time": 99,
+      "pm_uptime": 0,
+      "env": { "PORT": "3004" }
+    }
+  },
+  {
+    "name": "zorbit-pii-vault",
+    "pm2_env": {
+      "status": "waiting restart",
+      "restart_time": 99,
+      "pm_uptime": 0,
+      "env": { "PORT": "3005" }
+    }
+  },
+  {
+    "name": "zorbit-cor-module_registry",
+    "pm2_env": {
+      "status": "waiting restart",
+      "restart_time": 72,
+      "pm_uptime": 0,
+      "env": { "PORT": "3020" }
+    }
+  },
+  {
+    "name": "zorbit-cor-deployment_registry",
+    "pm2_env": {
+      "status": "online",
+      "restart_time": 0,
+      "pm_uptime": 1777139900000,
+      "env": { "PORT": "3022" }
+    }
+  }
+]

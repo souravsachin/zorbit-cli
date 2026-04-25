@@ -1,0 +1,38 @@
+[
+  {
+    "name": "zorbit-app-broker",
+    "pm2_env": {
+      "status": "online",
+      "restart_time": 0,
+      "pm_uptime": 1777140100000,
+      "env": { "PORT": "3201" }
+    }
+  },
+  {
+    "name": "zorbit-app-sample",
+    "pm2_env": {
+      "status": "waiting restart",
+      "restart_time": 390,
+      "pm_uptime": 0,
+      "env": { "PORT": "3210" }
+    }
+  },
+  {
+    "name": "zorbit-app-zmb_selftest",
+    "pm2_env": {
+      "status": "waiting restart",
+      "restart_time": 378,
+      "pm_uptime": 0,
+      "env": { "PORT": "3211" }
+    }
+  },
+  {
+    "name": "zorbit-app-hi_quotation",
+    "pm2_env": {
+      "status": "waiting restart",
+      "restart_time": 378,
+      "pm_uptime": 0,
+      "env": { "PORT": "3220" }
+    }
+  }
+]

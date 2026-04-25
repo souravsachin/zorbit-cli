@@ -1,0 +1,19 @@
+[
+  { "module_id": "zorbit-cor-identity",            "status": "READY" },
+  { "module_id": "zorbit-cor-authorization",       "status": "READY" },
+  { "module_id": "zorbit-cor-navigation",          "status": "READY" },
+  { "module_id": "zorbit-event_bus",               "status": "READY" },
+  { "module_id": "zorbit-pii-vault",               "status": "PENDING" },
+  { "module_id": "zorbit-cor-module_registry",     "status": "READY" },
+  { "module_id": "zorbit-cor-deployment_registry", "status": "READY" },
+  { "module_id": "zorbit-pfs-datatable",           "status": "READY" },
+  { "module_id": "zorbit-pfs-form_builder",        "status": "PENDING" },
+  { "module_id": "zorbit-pfs-integration",         "status": "READY" },
+  { "module_id": "zorbit-pfs-file_viewer",         "status": "READY" },
+  { "module_id": "zorbit-pfs-workflow_engine",     "status": "READY" },
+  { "module_id": "zorbit-app-broker",              "status": "READY" },
+  { "module_id": "zorbit-app-sample",              "status": "READY" },
+  { "module_id": "zorbit-app-zmb_selftest",        "status": "READY" },
+  { "module_id": "zorbit-app-hi_quotation",        "status": "READY" },
+  { "module_id": "zorbit-ai-tele_uw",              "status": "READY" }
+]
