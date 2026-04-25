@@ -1,0 +1,47 @@
+[
+  {
+    "name": "zorbit-pfs-datatable",
+    "pm2_env": {
+      "status": "online",
+      "restart_time": 2,
+      "pm_uptime": 1777140000000,
+      "env": { "PORT": "3013" }
+    }
+  },
+  {
+    "name": "zorbit-pfs-form_builder",
+    "pm2_env": {
+      "status": "waiting restart",
+      "restart_time": 391,
+      "pm_uptime": 0,
+      "env": { "PORT": "3014" }
+    }
+  },
+  {
+    "name": "zorbit-pfs-integration",
+    "pm2_env": {
+      "status": "waiting restart",
+      "restart_time": 391,
+      "pm_uptime": 0,
+      "env": { "PORT": "3115" }
+    }
+  },
+  {
+    "name": "zorbit-pfs-file_viewer",
+    "pm2_env": {
+      "status": "waiting restart",
+      "restart_time": 386,
+      "pm_uptime": 0,
+      "env": { "PORT": "3116" }
+    }
+  },
+  {
+    "name": "zorbit-pfs-workflow_engine",
+    "pm2_env": {
+      "status": "waiting restart",
+      "restart_time": 386,
+      "pm_uptime": 0,
+      "env": { "PORT": "3117" }
+    }
+  }
+]

@@ -1,0 +1,11 @@
+[
+  {
+    "name": "zorbit-ai-tele_uw",
+    "pm2_env": {
+      "status": "online",
+      "restart_time": 6,
+      "pm_uptime": 1777140600000,
+      "env": { "PORT": "3600" }
+    }
+  }
+]
