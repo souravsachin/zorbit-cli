@@ -27,10 +27,17 @@ set +e
 # ---- Args -----------------------------------------------------------------
 ENV_PREFIX=""
 SA_JSON=""
+PARALLEL_PRIVILEGE_DISCOVERY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --env) ENV_PREFIX="$2"; shift 2 ;;
     --super-admins-json) SA_JSON="$2"; shift 2 ;;
+    # M2 (2026-04-26): when set, the privilege-discovery step ALSO reads
+    # module_registry.modules.manifest_data.privileges and logs the delta
+    # against the find-grep loop. Default OFF — owner reviews delta before
+    # flipping the discovery source. See:
+    #   00_docs/platform/cli-privilege-discovery-parallel-run.md
+    --parallel-privilege-discovery) PARALLEL_PRIVILEGE_DISCOVERY=1; shift ;;
     *) shift ;;
   esac
 done
@@ -89,7 +96,57 @@ PRIVS=$(for c in ${ENV_PREFIX}-core ${ENV_PREFIX}-pfs ${ENV_PREFIX}-apps ${ENV_P
   docker exec $c sh -c 'find /app -name "*.js" -path "*/dist/*" -exec grep -ohE "RequirePrivileges\\)\\([^)]+\\)" {} \;' 2>/dev/null
 done | grep -oE "'[a-z][a-z0-9._-]+'" | tr -d "'" | sort -u)
 PRIV_COUNT=$(echo "$PRIVS" | wc -l)
-log "  discovered $PRIV_COUNT unique privilege codes"
+log "  discovered $PRIV_COUNT unique privilege codes (find-grep)"
+
+# M2 — Parallel-run mode (since 2026-04-26).
+# When --parallel-privilege-discovery is set, ALSO read the manifest_data
+# JSONB column from zorbit_module_registry.modules and compute the delta
+# vs find-grep. Logs the delta to $LOG; does NOT change which set of
+# privileges is seeded.
+#
+# Owner reviews the delta in the morning. If find-grep and manifest agree
+# (delta == empty), we can swap the discovery source on a future PR.
+# Until then, find-grep stays the source of truth.
+if [[ "$PARALLEL_PRIVILEGE_DISCOVERY" == "1" ]]; then
+  log "  M2 parallel-run: reading manifest_data.privileges from module_registry"
+  MANIFEST_PRIVS=$(docker exec zs-pg psql -U zorbit -d zorbit_module_registry -tAc "
+    SELECT DISTINCT jsonb_array_elements_text(manifest_data->'privileges')
+      FROM modules
+     WHERE manifest_data ? 'privileges'
+       AND jsonb_typeof(manifest_data->'privileges') = 'array'
+    ORDER BY 1;
+  " 2>/dev/null | grep -E '^[a-z][a-z0-9._-]+$' | sort -u)
+  MANIFEST_PRIV_COUNT=$(echo "$MANIFEST_PRIVS" | grep -c . || true)
+  log "  M2 parallel-run: manifest declared $MANIFEST_PRIV_COUNT unique privilege codes"
+
+  TMP_GREP=$(mktemp /tmp/m2-grep.XXXXXX)
+  TMP_MAN=$(mktemp /tmp/m2-manifest.XXXXXX)
+  echo "$PRIVS"          | sort -u > "$TMP_GREP"
+  echo "$MANIFEST_PRIVS" | sort -u > "$TMP_MAN"
+
+  # Privileges declared by manifest but NOT seen in dist code (= consumer
+  # forgot to wire @RequirePrivileges() on a route)
+  ONLY_MANIFEST=$(comm -23 "$TMP_MAN" "$TMP_GREP")
+  ONLY_MANIFEST_N=$(echo "$ONLY_MANIFEST" | grep -c . || true)
+  # Privileges in dist code but NOT declared in manifest (= service is
+  # checking a privilege that was never registered)
+  ONLY_GREP=$(comm -13 "$TMP_MAN" "$TMP_GREP")
+  ONLY_GREP_N=$(echo "$ONLY_GREP" | grep -c . || true)
+
+  log "  M2 delta: only_in_manifest=$ONLY_MANIFEST_N only_in_grep=$ONLY_GREP_N"
+  if [[ "$ONLY_MANIFEST_N" -gt 0 ]]; then
+    log "  M2 only_in_manifest (declared but not enforced in code):"
+    echo "$ONLY_MANIFEST" | head -50 | while read -r p; do log "    - $p"; done
+  fi
+  if [[ "$ONLY_GREP_N" -gt 0 ]]; then
+    log "  M2 only_in_grep (enforced in code but not declared in manifest):"
+    echo "$ONLY_GREP" | head -50 | while read -r p; do log "    - $p"; done
+  fi
+  counts[m2_manifest_privs]=$MANIFEST_PRIV_COUNT
+  counts[m2_only_in_manifest]=$ONLY_MANIFEST_N
+  counts[m2_only_in_grep]=$ONLY_GREP_N
+  rm -f "$TMP_GREP" "$TMP_MAN"
+fi
 
 # Ensure baseline section + role exist
 docker exec zs-pg psql -U zorbit -d zorbit_authorization -c "
@@ -241,7 +298,7 @@ sadmins=$(docker exec zs-pg psql -U zorbit -d zorbit_authorization -tAc "SELECT 
 cat > "$STATUS" <<JSON
 {
   "gate": "L4-L7-bootstrap",
-  "version": "0.2",
+  "version": "0.3",
   "finished": "$(date -Iseconds)",
   "env_prefix": "$ENV_PREFIX",
   "outputs": {
@@ -255,7 +312,11 @@ cat > "$STATUS" <<JSON
     "dbs_created": ${counts[dbs_created]:-0},
     "dbs_existing": ${counts[dbs_existing]:-0},
     "privileges_seeded": ${counts[privileges_seeded]:-0},
-    "admins_registered": ${counts[admins_registered]:-0}
+    "admins_registered": ${counts[admins_registered]:-0},
+    "m2_parallel_privilege_discovery": $PARALLEL_PRIVILEGE_DISCOVERY,
+    "m2_manifest_privileges": ${counts[m2_manifest_privs]:-0},
+    "m2_only_in_manifest": ${counts[m2_only_in_manifest]:-0},
+    "m2_only_in_grep": ${counts[m2_only_in_grep]:-0}
   },
   "next_gate": "L8 browser-smoke"
 }
