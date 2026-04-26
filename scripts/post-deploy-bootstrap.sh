@@ -47,6 +47,18 @@ counts[gate]="L4-L7-bootstrap"
 
 log() { echo "[$(date -Iseconds)] $*" | tee -a "$LOG"; }
 
+# ---- Step 0.5: Install Postgres extensions on template1 (pgcrypto) -------
+# pgcrypto provides pgp_sym_encrypt/pgp_sym_decrypt for column-level
+# encryption. Installed on template1 so every DB created in Step 1 inherits
+# it automatically. SDK 0.5.9+ exposes EncryptionService (AES-256-GCM at the
+# app layer) — pgcrypto is the emergency / audit decryption fallback path.
+log "Step 0.5: install pgcrypto extension on template1 + postgres"
+for db in template1 postgres; do
+  out=$(docker exec zs-pg psql -U zorbit -d "$db" -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;" 2>&1 | tail -1)
+  log "  pgcrypto on $db: $out"
+done
+counts[pgcrypto_installed]=1
+
 # ---- Step 1: Discover + create per-service DBs ----------------------------
 log "Step 1: discover + create per-service Postgres databases"
 DBS=$(for c in ${ENV_PREFIX}-core ${ENV_PREFIX}-pfs ${ENV_PREFIX}-apps ${ENV_PREFIX}-ai; do
