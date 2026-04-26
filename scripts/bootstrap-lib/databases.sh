@@ -66,19 +66,23 @@ start_kafka() {
     run_cmd "Start kafka ${container}" docker start "${container}" || true
     return 0
   fi
+  # 2026-04-27: switched bitnami/kafka:3.7 → apache/kafka:3.7.0 because Bitnami
+  # stopped publishing free OSS images late 2025. Apache official uses KAFKA_*
+  # (no _CFG_ prefix) per its env var contract — matches what zs-shared.yml
+  # already uses for the compose-template path.
   run_cmd "Launch kafka ${container} on :${port}" docker run -d \
     --name "${container}" \
     --restart unless-stopped \
-    -e KAFKA_CFG_NODE_ID=1 \
-    -e KAFKA_CFG_PROCESS_ROLES=controller,broker \
-    -e KAFKA_CFG_CONTROLLER_QUORUM_VOTERS="1@${container}:9093" \
-    -e KAFKA_CFG_LISTENERS="PLAINTEXT://:9092,CONTROLLER://:9093" \
-    -e KAFKA_CFG_ADVERTISED_LISTENERS="PLAINTEXT://${container}:9092" \
-    -e KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER \
-    -e KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP="CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT" \
-    -e ALLOW_PLAINTEXT_LISTENER=yes \
+    -e KAFKA_NODE_ID=1 \
+    -e KAFKA_PROCESS_ROLES=controller,broker \
+    -e KAFKA_CONTROLLER_QUORUM_VOTERS="1@${container}:9093" \
+    -e KAFKA_LISTENERS="PLAINTEXT://:9092,CONTROLLER://:9093" \
+    -e KAFKA_ADVERTISED_LISTENERS="PLAINTEXT://${container}:9092" \
+    -e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+    -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP="CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT" \
+    -e KAFKA_LOG_DIRS=/var/lib/kafka/data \
     -p "${port}:9092" \
-    bitnami/kafka:3.7
+    apache/kafka:3.7.0
 }
 
 start_redis() {
