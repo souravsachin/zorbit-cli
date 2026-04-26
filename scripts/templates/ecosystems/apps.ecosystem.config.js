@@ -12,6 +12,17 @@
  *   issues where source uses MONGO_URI but compiled dist still references
  *   MONGODB_URI. zs-mongo is the shared Mongo container in the dev/qa/demo/
  *   prod env-stack. ze_platform is the shared logical DB.
+ *
+ * VITE SPA RECLASS (2026-04-26, soldier (p) fix/cycle-105-vite-spa-reclass-ecosystem):
+ *   Removed 4 Vite/React SPAs that were misclassified as Node services and
+ *   crash-looping with "Script not found: dist/main.js" (Vite emits dist/index.html
+ *   + assets/, not dist/main.js):
+ *     - zorbit-app-claims_intake   (was 3203)
+ *     - zorbit-app-prospect_portal (was 3221)
+ *     - zorbit-portal-customer     (was 3229)
+ *     - zorbit-portal-prospect     (was 3230)
+ *   These are now served as static SPAs by ze-web nginx from
+ *   /var/www/spa-apps/<svc>/dist/. See ze-web-nginx.conf SPA static apps block.
  */
 const MONGO_URI = process.env.MONGO_URI ||
   'mongodb://zorbit:zorbit_nonprod_secret@zs-mongo:27017/ze_platform?authSource=admin';
@@ -43,7 +54,7 @@ module.exports = {
     mkApp('sample-customer-service',                    3200),
     mkApp('zorbit-app-broker',                          3201),
     mkApp('zorbit-app-claims_core',                     3202),
-    mkApp('zorbit-app-claims_intake',                   3203),
+    // 3203 zorbit-app-claims_intake — RECLASSIFIED to Vite SPA (served by ze-web)
     mkApp('zorbit-app-hi_claim_adjudication_workflow',  3204),
     mkApp('zorbit-app-hi_claim_decisioning',            3205),
     mkApp('zorbit-app-hi_claim_initiation',             3206),
@@ -61,7 +72,7 @@ module.exports = {
     mkApp('zorbit-app-pcg4',                            3218),
     mkApp('zorbit-app-pcg5',                            3219),
     mkApp('zorbit-app-product_pricing',                 3220),
-    mkApp('zorbit-app-prospect_portal',                 3221),
+    // 3221 zorbit-app-prospect_portal — RECLASSIFIED to Vite SPA (served by ze-web)
     mkApp('zorbit-app-retail_banking_demo',             3222),
     mkApp('zorbit-app-sample',                          3223),
     mkApp('zorbit-app-sample_module',                   3224),
@@ -69,7 +80,7 @@ module.exports = {
     mkApp('zorbit-app-uw_workflow',                     3226),
     mkApp('zorbit-app-wealth_mgmt_demo',                3227),
     mkApp('zorbit-app-zmb_selftest',                    3228),
-    mkApp('zorbit-portal-customer',                     3229),
-    mkApp('zorbit-portal-prospect',                     3230),
+    // 3229 zorbit-portal-customer — RECLASSIFIED to Vite SPA (served by ze-web)
+    // 3230 zorbit-portal-prospect — RECLASSIFIED to Vite SPA (served by ze-web)
   ],
 };
