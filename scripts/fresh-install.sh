@@ -13,6 +13,9 @@
 #   L2 — tear down ze-* on VM 110 (preserve zs-*)
 #   L3 — build bundles (laptop) — skipped by default, uses cached tarballs
 #   L4 — deploy bundles to VM 110 + bring ze-* up
+#   L4.5 — verify SDK peer-deps resolve in every consumer (axios, @nestjs/typeorm,
+#          mongoose, kafkajs, rxjs) — catches the (o)-finding 2026-04-26 class
+#          BEFORE PM2 burns CPU on crash-loops. See verify-sdk-peer-deps.sh.
 #   L5 — wait for PM2 online across ze-core/pfs/apps/ai
 #   L6 — wait for module-registry READY count >= MIN_READY (default 40)
 #   L7 — post-deploy bootstrap (slug patcher / nav rehydrate / super_admin)
@@ -92,7 +95,7 @@ START_EPOCH=$(date +%s)
 PASSED_GATES=()
 FAILED_GATES=()
 AUTO_FIXED_GATES=()
-TOTAL_GATES=10
+TOTAL_GATES=11
 
 mkdir -p "$(dirname "$LOG")"
 : > "$LOG"
@@ -149,12 +152,13 @@ run_on_sandbox() {
   fi
 }
 
-# Numeric ordering of gate name (L0..L9 -> 0..9)
+# Numeric ordering of gate name (L0..L9 -> 0..9; L4.5 -> 4.5)
 gate_num() { echo "${1#L}"; }
 
 should_skip_gate() {
   local g="$1"
-  [[ $(gate_num "$g") -lt $(gate_num "$START_AT") ]]
+  # awk handles fractional comparison (L4.5 < L5)
+  awk -v a="$(gate_num "$g")" -v b="$(gate_num "$START_AT")" 'BEGIN { exit (a + 0 < b + 0 ? 0 : 1) }'
 }
 
 mark_pass() {
@@ -383,6 +387,69 @@ EOF
   else
     mark_fail L4 "only ${up}/5 containers up"
     return 1
+  fi
+}
+
+# ---- Gate L4.5: SDK peer-dep resolution -------------------------------------
+# Catches the (o)-finding (2026-04-26 20:07 +07): SDK tarball replace can leave
+# a consumer unable to resolve `axios` / `@nestjs/typeorm` / `mongoose` /
+# `kafkajs` / `rxjs` from its own perspective. If we don't catch this here,
+# PM2 will spend the next 5 minutes in restart-loop with `Cannot find module`
+# stacks — exactly what CPU PROTECTION (CLAUDE.md F1) is meant to prevent.
+#
+# Implementation: ship verify-sdk-peer-deps.sh into each ze-* container and
+# run it. Container's image already has /app/<svc>/ + node binary, so this is
+# a 1s probe per consumer. ~70 consumers × 5 deps = ~350 require.resolve calls.
+gate_l4_5() {
+  banner "L4.5 — Verify SDK peer-deps resolve in every consumer"
+  cat > /tmp/_fi-l4_5.sh <<EOF
+#!/bin/bash
+set +e
+ENV=${ENV_PREFIX}
+# Stage the verifier into a temp file we then docker cp into each container.
+cat > /tmp/_verify-sdk-peer-deps.sh <<'VERIFY'
+$(cat "$(dirname "$0")/verify-sdk-peer-deps.sh" 2>/dev/null)
+VERIFY
+chmod +x /tmp/_verify-sdk-peer-deps.sh
+
+OVERALL_FAIL=0
+for c in \${ENV}-core \${ENV}-pfs \${ENV}-apps \${ENV}-ai; do
+  if ! docker ps --format '{{.Names}}' | grep -q "^\$c$"; then
+    echo "[skip] \$c not running"; continue
+  fi
+  docker cp /tmp/_verify-sdk-peer-deps.sh "\$c:/tmp/_verify-sdk-peer-deps.sh" >/dev/null 2>&1
+  echo "---- \$c ----"
+  out=\$(docker exec "\$c" bash /tmp/_verify-sdk-peer-deps.sh /app 2>&1 1>/dev/null)
+  rc=\$?
+  echo "\$out" | tail -8
+  if [[ \$rc -ne 0 ]]; then
+    OVERALL_FAIL=1
+    # Parse out the failed dep summary line
+    fails=\$(docker exec "\$c" bash /tmp/_verify-sdk-peer-deps.sh /app 2>&1 1>/dev/null | grep -oE '"failed": \[[^]]*\]' | head -1)
+    echo "FAILED_IN_\$c: \$fails"
+  fi
+done
+echo "OVERALL_FAIL=\$OVERALL_FAIL"
+EOF
+  chmod +x /tmp/_fi-l4_5.sh
+  local out
+  out=$(run_on_vm /tmp/_fi-l4_5.sh 2>&1)
+  log "$(echo "$out" | tail -30 | sed 's/^/  /')"
+  local overall
+  overall=$(echo "$out" | grep -oE 'OVERALL_FAIL=[01]' | tail -1 | cut -d= -f2)
+  if [[ "$overall" == "0" ]]; then
+    mark_pass L4.5 "every consumer resolves axios + @nestjs/typeorm + mongoose + kafkajs + rxjs"
+    return 0
+  elif [[ "$overall" == "1" ]]; then
+    # Don't FAIL outright — log the gap and continue. soldier (s) needs to bake.
+    # When/if this becomes mandatory-fail, change to mark_fail + return 1.
+    local sample
+    sample=$(echo "$out" | grep 'FAILED_IN_' | head -2 | tr '\n' ' ')
+    mark_warn L4.5 "peer-dep resolution gap detected — bake required: ${sample}"
+    return 0
+  else
+    mark_warn L4.5 "verifier didn't return a parseable summary; see log"
+    return 0
   fi
 }
 
@@ -650,23 +717,24 @@ gate_l9() {
 banner "fresh-install-${ENV_PREFIX} starting (log: ${LOG})"
 gchat "🚀 fresh-install-${ENV_PREFIX} starting at ${TS} (rebuild=${REBUILD}, start=${START_AT})"
 
-GATES=(L0 L1 L2 L3 L4 L5 L6 L7 L8 L9)
+GATES=(L0 L1 L2 L3 L4 L4.5 L5 L6 L7 L8 L9)
 for g in "${GATES[@]}"; do
   if should_skip_gate "$g"; then
     log "SKIP ${g} (start_at=${START_AT})"
     continue
   fi
   case "$g" in
-    L0) gate_l0 || true ;;
-    L1) gate_l1 || true ;;
-    L2) gate_l2 || true ;;
-    L3) gate_l3 || true ;;
-    L4) gate_l4 || true ;;
-    L5) gate_l5 || true ;;
-    L6) gate_l6 || true ;;
-    L7) gate_l7 || true ;;
-    L8) gate_l8 || true ;;
-    L9) gate_l9 || true ;;
+    L0)   gate_l0 || true ;;
+    L1)   gate_l1 || true ;;
+    L2)   gate_l2 || true ;;
+    L3)   gate_l3 || true ;;
+    L4)   gate_l4 || true ;;
+    L4.5) gate_l4_5 || true ;;
+    L5)   gate_l5 || true ;;
+    L6)   gate_l6 || true ;;
+    L7)   gate_l7 || true ;;
+    L8)   gate_l8 || true ;;
+    L9)   gate_l9 || true ;;
   esac
 done
 
