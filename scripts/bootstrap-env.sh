@@ -55,6 +55,7 @@ ENV_ARG=""
 SKIP_CONFIRM=false
 ROLLBACK_LAST=false
 NO_AUTO_ROLLBACK=false
+MODULE_LIST=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -63,11 +64,37 @@ while [[ $# -gt 0 ]]; do
     --yes|-y)            SKIP_CONFIRM=true; shift;;
     --rollback-last)     ROLLBACK_LAST=true; shift;;
     --no-auto-rollback)  NO_AUTO_ROLLBACK=true; shift;;
+    --module-list)       MODULE_LIST="$2"; shift 2;;
     --help|-h)
       sed -n '/^#/p' "${BASH_SOURCE[0]}" | sed -n '1,40p'; exit 0;;
     *) log_error "Unknown arg: $1"; exit 2;;
   esac
 done
+
+# --module-list: lockfile from `zorbit env install` (cycle 106). When given,
+# only modules listed in the lockfile are deployed. Backwards compatible —
+# if absent, the installer behaves as if every manifest entry is selected
+# (the historical "max" preset behavior).
+if [[ -n "${MODULE_LIST}" ]]; then
+  if [[ ! -f "${MODULE_LIST}" ]]; then
+    log_error "--module-list file not found: ${MODULE_LIST}"
+    exit 2
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    log_error "--module-list requires jq (apt install jq)"
+    exit 2
+  fi
+  # Validate it parses + has the expected schema fields
+  if ! jq -e '.modules and .env and .preset and .source_spec_version' "${MODULE_LIST}" >/dev/null 2>&1; then
+    log_error "--module-list lockfile schema invalid (must contain .env, .preset, .modules, .source_spec_version): ${MODULE_LIST}"
+    exit 2
+  fi
+  export ZORBIT_MODULE_LIST="${MODULE_LIST}"
+  export ZORBIT_INSTALL_PRESET=$(jq -r '.preset' "${MODULE_LIST}")
+  log_info "Using module-list lockfile: ${MODULE_LIST}"
+  log_info "  preset:   ${ZORBIT_INSTALL_PRESET}"
+  log_info "  modules:  $(jq -r '.modules | length' "${MODULE_LIST}")"
+fi
 export DRY_RUN
 [[ "${NO_AUTO_ROLLBACK}" == "true" ]] && export ZORBIT_SKIP_AUTO_ROLLBACK=true
 

@@ -117,15 +117,26 @@ wait_postgres_ready() {
 
 create_service_databases() {
   # Creates zorbit_<service> databases for every repo of type=service + db=postgres.
+  # When ZORBIT_MODULE_LIST is set (cycle 106), only modules in the lockfile
+  # have their database created.
   local container="$1"
   local manifest_file="$2"
+  local module_list="${ZORBIT_MODULE_LIST:-}"
   local services
-  services=$(python3 - "${manifest_file}" <<'PY'
-import sys, yaml
+  services=$(python3 - "${manifest_file}" "${module_list}" <<'PY'
+import sys, yaml, json
 with open(sys.argv[1]) as f:
     data = yaml.safe_load(f)
+module_list_path = sys.argv[2] if len(sys.argv) > 2 else ""
+allowed = None
+if module_list_path:
+    with open(module_list_path) as f:
+        lockfile = json.load(f)
+    allowed = set(lockfile.get('modules', []))
 for r in data['repos']:
     if r.get('type') == 'service' and r.get('db') == 'postgres':
+        if allowed is not None and r['name'] not in allowed:
+            continue  # skipped per --module-list lockfile
         print(r['name'].replace('-', '_'))
 PY
 )
