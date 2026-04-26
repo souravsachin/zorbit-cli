@@ -23,15 +23,24 @@
 pull_all_images() {
   local manifest_file="$1"
   local image_tag="${ZORBIT_IMAGE_TAG:-latest}"
+  local module_list="${ZORBIT_MODULE_LIST:-}"
 
   local images
-  images=$(python3 - "${manifest_file}" "${image_tag}" <<'PY'
-import sys, yaml
+  images=$(python3 - "${manifest_file}" "${image_tag}" "${module_list}" <<'PY'
+import sys, yaml, json
 with open(sys.argv[1]) as f:
     data = yaml.safe_load(f)
 tag = sys.argv[2]
+module_list_path = sys.argv[3] if len(sys.argv) > 3 else ""
+allowed = None
+if module_list_path:
+    with open(module_list_path) as f:
+        lockfile = json.load(f)
+    allowed = set(lockfile.get('modules', []))
 for r in data['repos']:
     if r.get('type') in ('service', 'frontend', 'app', 'portal'):
+        if allowed is not None and r['name'] not in allowed:
+            continue  # skipped per --module-list lockfile
         img = r.get('image')
         if not img:
             continue
@@ -88,9 +97,15 @@ load_artifact_bundle() {
 
 generate_compose_file() {
   local env_name="$1"; local env_file="$2"; local manifest_file="$3"; local out_file="$4"
-  python3 - "${env_file}" "${manifest_file}" "${env_name}" "${out_file}" "${ZORBIT_IMAGE_TAG:-latest}" <<'PY'
-import sys, yaml
+  python3 - "${env_file}" "${manifest_file}" "${env_name}" "${out_file}" "${ZORBIT_IMAGE_TAG:-latest}" "${ZORBIT_MODULE_LIST:-}" <<'PY'
+import sys, yaml, json
 env_file, manifest_file, env_name, out_file, tag = sys.argv[1:6]
+module_list_path = sys.argv[6] if len(sys.argv) > 6 else ""
+allowed = None
+if module_list_path:
+    with open(module_list_path) as f:
+        lockfile = json.load(f)
+    allowed = set(lockfile.get('modules', []))
 with open(env_file) as f:
     envs = yaml.safe_load(f)
 with open(manifest_file) as f:
@@ -147,6 +162,8 @@ for r in manifest['repos']:
         continue
     if not r.get('port'):
         continue
+    if allowed is not None and r['name'] not in allowed:
+        continue  # skipped per --module-list lockfile (cycle 106)
     image = r.get('image')
     if not image:
         # Required for runtime repos per schema v1.1. Skip with warning on bad manifests.

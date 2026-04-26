@@ -7,6 +7,7 @@ import { registerEventCommand } from './commands/register-event';
 import { registerPrivilegeCommand } from './commands/register-privilege';
 import { generateApiCommand } from './commands/generate-api';
 import { zmbCreateCommand } from './commands/zmb-create';
+import { envInstallCommand } from './commands/env-install';
 
 const program = new Command();
 
@@ -21,5 +22,6 @@ registerEventCommand(program);
 registerPrivilegeCommand(program);
 generateApiCommand(program);
 zmbCreateCommand(program);
+envInstallCommand(program);
 
 program.parse(process.argv);
