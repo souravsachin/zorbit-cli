@@ -5,14 +5,31 @@
  * CPU PROTECTION (2026-04-25, fix/F2-cpu-protection):
  *   restart-throttle + node heap cap baked into mkApp() so every entry inherits.
  *   See core.ecosystem.config.js header for full rationale.
+ *
+ * MONGO ENV (2026-04-26, soldier (n) fix/n-pcg5-mongodb-uri):
+ *   Apps that use Mongoose (e.g. zorbit-app-pcg5) read both MONGO_URI and
+ *   MONGODB_URI as fallbacks. Setting both eliminates source/dist drift
+ *   issues where source uses MONGO_URI but compiled dist still references
+ *   MONGODB_URI. zs-mongo is the shared Mongo container in the dev/qa/demo/
+ *   prod env-stack. ze_platform is the shared logical DB.
  */
+const MONGO_URI = process.env.MONGO_URI ||
+  'mongodb://zorbit:zorbit_nonprod_secret@zs-mongo:27017/ze_platform?authSource=admin';
+
 const mkApp = (name, port) => ({
   name,
   script: 'dist/main.js',
   cwd: `/app/${name}`,
   instances: 1,
   exec_mode: 'fork',
-  env: { NODE_ENV: 'production', PORT: port, NODE_OPTIONS: '--preserve-symlinks' },
+  env: {
+    NODE_ENV: 'production',
+    PORT: port,
+    NODE_OPTIONS: '--preserve-symlinks',
+    // Both var names — covers source/dist drift across pcg5 + future Mongoose apps
+    MONGO_URI,
+    MONGODB_URI: MONGO_URI,
+  },
   max_memory_restart: '256M',
   min_uptime: '10s',
   max_restarts: 10,
