@@ -60,22 +60,28 @@ DRY_RUN=false
 # Critical peer-deps that MUST resolve from the consumer's perspective once
 # the SDK is in place. Add to this list as the SDK gains new transitive deps.
 #   axios          — HTTP client (SDK's clients/, interceptors/, middleware/)
-#   @nestjs/axios  — HttpModule (consumer-only; navigation/identity/etc)
-#   @nestjs/typeorm — DI repository tokens (consumer-only via prune)
-#   mongoose       — SDK's database/ adapter
 #   kafkajs        — SDK's kafka/ client
-#   rxjs           — peer dep, often transitive
+#   rxjs           — peer dep, often transitive (every consumer imports it)
+#
+# IMPORTANT: do NOT add lazy-loaded SDK deps here. The SDK lazy-loads its
+# database adapter (mongoose) and TypeORM helpers (@nestjs/typeorm) — a
+# consumer that does not import those features should NOT need them in its
+# own node_modules. Putting them here triggers an unnecessary
+# `npm install --no-save` bake which can OOM-kill on memory-constrained
+# containers (ze-pfs / ze-apps observed at >95% memUsed during fleet
+# upgrades 2026-04-26 by soldier (s) MSG-071).
 CRITICAL_DEPS=(
   axios
-  '@nestjs/typeorm'
-  mongoose
   kafkajs
   rxjs
 )
 # Optional deps (some consumers don't import them). Verify but don't auto-install
 # unless missing. @nestjs/axios is in this list because not every consumer uses
-# HttpModule.
+# HttpModule. mongoose + @nestjs/typeorm are here for the same reason — the
+# SDK lazy-loads them; absence is fine when the consumer does not use them.
 OPTIONAL_DEPS=(
+  mongoose
+  '@nestjs/typeorm'
   '@nestjs/axios'
   '@nestjs/common'
   '@nestjs/core'
@@ -85,6 +91,13 @@ OPTIONAL_DEPS=(
   'reflect-metadata'
   typeorm
 )
+# SDK-bundled deps — packages that the SDK ships in its own node_modules
+# pre-prune. With NODE_OPTIONS=--preserve-symlinks (PM2 runtime), consumers
+# cannot reach into the SDK's bundled node_modules. To make these resolvable
+# from the consumer's parent walk, bootstrap a symlink in /app/node_modules/
+# pointing at the SDK's copy. This avoids both an `npm install` bake (memory
+# pressure) AND a duplicated copy of the dep (disk).
+SDK_BUNDLED_DEPS=(axios mongoose kafkajs)
 
 # ---- CLI parse --------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
@@ -162,6 +175,28 @@ else
   [[ -f "$SDK_DIR/package.json" ]] || { log "ERROR: SDK package.json missing after extract"; exit 2; }
   SDK_VER=$(node -p "require('${SDK_DIR}/package.json').version" 2>/dev/null || echo "?")
   log "  extracted SDK ${SDK_VER}"
+fi
+
+# ---- Phase 1.5: bootstrap shared symlinks for SDK-bundled deps --------------
+# Without this, consumers in containers that have no /app/node_modules/ (eg
+# ze-pfs / ze-apps fleet) cannot resolve axios / mongoose / kafkajs from
+# their own perspective with --preserve-symlinks, even though the SDK ships
+# those packages bundled. Symlinking once into /app/node_modules/<dep> makes
+# them reachable to every consumer in the same APP_ROOT, no per-svc bake.
+log "phase 1.5: bootstrap /app/node_modules symlinks for SDK-bundled deps"
+if $DRY_RUN; then
+  log "  --dry-run: would symlink ${SDK_BUNDLED_DEPS[*]}"
+else
+  mkdir -p "${APP_ROOT}/node_modules"
+  for DEP in "${SDK_BUNDLED_DEPS[@]}"; do
+    if [[ -d "${SDK_DIR}/node_modules/${DEP}" ]]; then
+      # Only create the symlink if there is no native install already.
+      if [[ ! -e "${APP_ROOT}/node_modules/${DEP}" ]]; then
+        ln -sfn "${SDK_DIR}/node_modules/${DEP}" "${APP_ROOT}/node_modules/${DEP}"
+        log "    linked ${DEP} -> ${SDK_DIR}/node_modules/${DEP}"
+      fi
+    fi
+  done
 fi
 
 # ---- Phase 2: trigger postinstall prune (idempotent) ------------------------
