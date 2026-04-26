@@ -12,6 +12,9 @@
 #   L1 — git pull source repos on dev-sandbox
 #   L2 — tear down ze-* on VM 110 (preserve zs-*)
 #   L3 — build bundles (laptop) — skipped by default, uses cached tarballs
+#   L3.5 — source/dist drift check (Item 38, 2026-04-26): warn (or fail) if any
+#          repo's src/ is newer than its dist/ — prevents merged-but-not-built
+#          regressions where the deployed bundle predates the just-merged fix.
 #   L4 — deploy bundles to VM 110 + bring ze-* up
 #   L4.5 — verify SDK peer-deps resolve in every consumer (axios, @nestjs/typeorm,
 #          mongoose, kafkajs, rxjs) — catches the (o)-finding 2026-04-26 class
@@ -339,6 +342,45 @@ CHECK
   else
     mark_fail L3 "build-all-bundles.sh failed"
     return 1
+  fi
+}
+
+# ---- Gate L3.5: source/dist drift check (Item 38, soldier (u), 2026-04-26) -
+# Lesson 17:33 +07: 30 services had stale dist/ (Apr 19-20) that didn't reflect
+# just-merged source — "merged != deployed". This gate compares src/ mtime vs
+# dist/ mtime per repo. WARN by default; FAIL when ZORBIT_FAIL_ON_DRIFT=1.
+gate_l3_5() {
+  banner "L3.5 — source/dist drift check"
+  local script="$ZORBIT_ROOT_LAPTOP/02_repos/zorbit-cli/scripts/check-source-dist-drift.sh"
+  if [[ ! -x "$script" ]]; then
+    mark_warn L3.5 "drift checker not found at $script — skipping"
+    return 0
+  fi
+  local fail_flag=""
+  if [[ "${ZORBIT_FAIL_ON_DRIFT:-0}" == "1" ]]; then
+    fail_flag="--fail-on-drift"
+  fi
+  local out
+  out=$(bash "$script" --repo-root "$ZORBIT_ROOT_LAPTOP/02_repos" $fail_flag 2>&1) || true
+  log "$(echo "$out" | tail -8 | sed 's/^/  /')"
+  local summary
+  summary=$(echo "$out" | grep -E '^Summary:' | tail -1)
+  local drift
+  drift=$(echo "$summary" | grep -oE 'DRIFT=[0-9]+' | cut -d= -f2)
+  if [[ -z "$drift" ]]; then
+    mark_warn L3.5 "drift checker returned no parseable summary"
+    return 0
+  fi
+  if [[ "$drift" == "0" ]]; then
+    mark_pass L3.5 "$summary"
+    return 0
+  fi
+  if [[ "${ZORBIT_FAIL_ON_DRIFT:-0}" == "1" ]]; then
+    mark_fail L3.5 "$summary — $drift repo(s) need rebuild before deploy"
+    return 1
+  else
+    mark_warn L3.5 "$summary — $drift repo(s) have src newer than dist (warn-only; set ZORBIT_FAIL_ON_DRIFT=1 to make fatal)"
+    return 0
   fi
 }
 
@@ -717,7 +759,7 @@ gate_l9() {
 banner "fresh-install-${ENV_PREFIX} starting (log: ${LOG})"
 gchat "🚀 fresh-install-${ENV_PREFIX} starting at ${TS} (rebuild=${REBUILD}, start=${START_AT})"
 
-GATES=(L0 L1 L2 L3 L4 L4.5 L5 L6 L7 L8 L9)
+GATES=(L0 L1 L2 L3 L3.5 L4 L4.5 L5 L6 L7 L8 L9)
 for g in "${GATES[@]}"; do
   if should_skip_gate "$g"; then
     log "SKIP ${g} (start_at=${START_AT})"
@@ -728,6 +770,7 @@ for g in "${GATES[@]}"; do
     L1)   gate_l1 || true ;;
     L2)   gate_l2 || true ;;
     L3)   gate_l3 || true ;;
+    L3.5) gate_l3_5 || true ;;
     L4)   gate_l4 || true ;;
     L4.5) gate_l4_5 || true ;;
     L5)   gate_l5 || true ;;
