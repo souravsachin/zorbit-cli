@@ -91,3 +91,26 @@ zorbit --help
 
 Follow Zorbit architecture rules.
 All generated code must follow Zorbit conventions for REST grammar, namespace isolation, hash IDs, and event-driven integration.
+
+## Image build + push pipeline (cycle-105 onward, MSG-094)
+
+Bundle images live at `ghcr.io/souravsachin/zorbit-<bundle>:<tag>`. Five bundles + one base image:
+
+| Bundle | Image | Tags |
+|--------|-------|------|
+| core | `ghcr.io/souravsachin/zorbit-core` | `<version>`, `<version>-<dated-sha>`, `latest` |
+| pfs | `ghcr.io/souravsachin/zorbit-pfs` | `<version>`, `<version>-<dated-sha>`, `latest` |
+| apps | `ghcr.io/souravsachin/zorbit-apps` | `<version>`, `<version>-<dated-sha>`, `latest` |
+| ai | `ghcr.io/souravsachin/zorbit-ai` | `<version>`, `<version>-<dated-sha>`, `latest` |
+| web | `ghcr.io/souravsachin/zorbit-web` | `<version>`, `<version>-<dated-sha>`, `latest` |
+| pm2-base | `ghcr.io/souravsachin/zorbit-pm2-base` | `1.0`, `latest` |
+
+Pipeline:
+
+1. `bash scripts/build-all-bundles.sh --env ze --version v0.1.0` — produces 5 local images + 5 tarballs at `bundles/v0.1.0/`.
+2. `bash scripts/push-bundles-to-ghcr.sh --version v0.1.0 [--extra-tag v0.1.0-20260425]` — tags + pushes 18+ image refs. Auth via `$GH_TOKEN` env or `gh auth token`.
+3. `bash scripts/bootstrap-env.sh --env qa` (on a fresh VM) — pulls images via the env compose template (`templates/compose/env.yml.j2`), which substitutes `{{IMAGE_REGISTRY_BASE}}` (default `ghcr.io/souravsachin`).
+
+Visibility: GitHub user-owned packages default to private. Mark public via web UI at `https://github.com/users/souravsachin/packages/container/package/<name>` → Package settings → Change visibility. REST PATCH `/user/packages/container/<name>/visibility` returns 404 for user-owned packages — only org-owned packages support that endpoint. Until visibility is public, every VM must `docker login ghcr.io -u souravsachin --password-stdin` with a PAT that has `read:packages`.
+
+Air-gapped fallback: leave `{{IMAGE_REGISTRY_BASE}}=""` in the rendered compose, then `docker load -i bundles/v0.1.0/*.tar.gz` on the target host. Same image refs (`zorbit-<bundle>:<version>`), no registry pull.
