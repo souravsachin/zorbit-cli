@@ -33,10 +33,18 @@
 # ============================================================================
 set -euo pipefail
 
+# Per-service health-path resolution (Item 37, soldier (u), 2026-04-26).
+# Replaces the uniform-path assumption that false-flagged ~17 services on
+# (h)'s original probe. See lib/health-paths.sh for resolution policy.
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# shellcheck source=lib/health-paths.sh
+source "${SCRIPT_DIR}/lib/health-paths.sh"
+
 ENV_PREFIX=""
 PUBLIC_URL=""
 FIXTURE_DIR=""
 OUT_FILE=""
+REPO_ROOT_FOR_MANIFESTS="${REPO_ROOT_FOR_MANIFESTS:-/Users/s/workspace/zorbit/02_repos}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -92,6 +100,36 @@ print(d.get('$uri', 0))
   else
     curl -sk -o /dev/null -w "%{http_code}" --max-time 5 "${PUBLIC_URL}${uri}" 2>/dev/null || echo 0
   fi
+}
+
+# probe_health_for_service <svc-name> <uri-prefix>
+# Tries each candidate path returned by resolve_health_paths_all in order.
+# A path counts as "healthy" if status is 200/204/401/403 (auth gates count).
+# Echoes "<status>|<path-that-worked>" so the caller can show which path passed
+# (helps diagnose drift between canonical and legacy endpoints).
+# This replaces (h)'s naive single-path probe (per (n) finding 19:03 +07).
+probe_health_for_service() {
+  local svc="$1"
+  local uri_prefix="$2"   # e.g. /api/pfs-rtc/   (trailing slash)
+  # Strip trailing slash from prefix for clean concatenation.
+  uri_prefix="${uri_prefix%/}"
+  local slug="${svc#zorbit-}"
+  local last_code=0
+  local last_path=""
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    local full_uri="${uri_prefix}${path}"
+    local code
+    code="$(probe_health "$full_uri")"
+    last_code="$code"
+    last_path="$path"
+    case "$code" in
+      200|204|401|403) echo "${code}|${path}"; return 0 ;;
+    esac
+  done < <(resolve_health_paths_all "$svc" "$slug" "$REPO_ROOT_FOR_MANIFESTS")
+  # No candidate succeeded — return the last code we saw (often 404 / 502)
+  echo "${last_code}|${last_path}"
+  return 0
 }
 
 # Resolve a service name to its public URI prefix.
@@ -165,9 +203,17 @@ for container in "${ENV_PREFIX}-core" "${ENV_PREFIX}-pfs" "${ENV_PREFIX}-apps" "
 
     manifest_status="${MANIFEST_STATUS[$name]:-MISSING}"
     uri=$(service_to_uri "$name")
-    health=$(probe_health "${uri}api/v1/G/health")
+    # Item 37 (u, 2026-04-26): try canonical /api/v1/G/health, then per-service
+    # legacy paths. Replaces (h)'s uniform-path assumption.
+    probe_result="$(probe_health_for_service "$name" "$uri")"
+    health="${probe_result%%|*}"
+    health_path="${probe_result#*|}"
     health_marker="$health"
-    [[ "$health" == "200" ]] && health_marker="200 OK"
+    [[ "$health" == "200" ]] && health_marker="200 OK (${health_path})"
+    [[ "$health" == "204" ]] && health_marker="204 OK (${health_path})"
+    [[ "$health" == "401" ]] && health_marker="401 AUTH (${health_path})"
+    [[ "$health" == "403" ]] && health_marker="403 AUTH (${health_path})"
+    [[ "$health" == "404" ]] && health_marker="404 NOT-FOUND"
     [[ "$health" == "502" ]] && health_marker="502 BAD-GW"
     [[ "$health" == "0"   ]] && health_marker="—"
 
@@ -226,5 +272,7 @@ emit ""
 emit "## Notes"
 emit ""
 emit "- restart_count > 50 → Section H.5 fail (per test-plan-v3 §H)"
-emit "- Health probed via \`${PUBLIC_URL:-fixture}/api/<svc>/api/v1/G/health\`"
+emit "- Health probed via canonical \`/api/<svc>/api/v1/G/health\` first;"
+emit "  falls back to per-service legacy path on 404 (e.g. /api/pfs-rtc/api/v1/G/rtc/health)."
+emit "  Health-path map: scripts/lib/health-paths.sh"
 emit "- Manifest status \`MISSING\` = PM2 has the process but module_registry doesn't — registry-drift finding"

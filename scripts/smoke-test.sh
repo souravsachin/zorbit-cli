@@ -41,6 +41,11 @@ LIB_DIR="${SCRIPT_DIR}/bootstrap-lib"
 # shellcheck disable=SC1091
 source "${LIB_DIR}/common.sh"
 
+# Per-service health-path resolution (Item 37, soldier (u), 2026-04-26).
+# shellcheck source=lib/health-paths.sh
+source "${SCRIPT_DIR}/lib/health-paths.sh"
+REPO_ROOT_FOR_MANIFESTS="${REPO_ROOT_FOR_MANIFESTS:-${REPO_ROOT_GUESS:-/Users/s/workspace/zorbit/02_repos}}"
+
 # ---------------------------------------------------------------------------
 # Arg parsing.
 # ---------------------------------------------------------------------------
@@ -187,24 +192,47 @@ PY
 
 # ---------------------------------------------------------------------------
 # Check 1: HTTP /health per service.
+#
+# Item 37 (u, 2026-04-26): per-service health-path resolution. Many services
+# now expose canonical /api/v1/G/health (post-(m), 21+ services) but a few
+# still only expose legacy paths (rtc, workflow_engine, realtime, secrets,
+# notification, integration, voice_engine, pcg5, claims_core, ...).
+# We try each candidate path and accept on first 200/204/401/403.
 # ---------------------------------------------------------------------------
 while IFS='|' read -r name slug port; do
   [[ -z "${name}" ]] && continue
-  # If BASE_URL is public, route through the nginx prefix; otherwise use the local port.
-  if [[ "${BASE_URL}" == "${BASE_URL_PUBLIC}" ]]; then
-    url="${BASE_URL}/api/${slug}/api/v1/G/health"
-  else
-    host_port=$((PORT_BASE + port - 3000))
-    url="http://127.0.0.1:${host_port}/health"
-  fi
-  out="$(_curl "${url}")"
-  code="$(_http_code "${out}")"
-  body="$(_http_body "${out}")"
-  if [[ "${code}" == "200" ]] && [[ "${body}" == *"ok"* || "${body}" == *"healthy"* || "${body}" == *"status"* ]]; then
-    record "health:${name}" "pass" "HTTP ${code}"
-  else
-    record "health:${name}" "fail" "HTTP ${code} body=${body:0:80}"
-  fi
+  # Use raw service name (with underscores) for health-paths map lookup;
+  # nginx slug uses hyphens. The legacy table is keyed on full repo name.
+  candidate_paths="$(resolve_health_paths_all "${name}" "${slug}" "${REPO_ROOT_FOR_MANIFESTS}")"
+  status="fail"
+  detail=""
+  while IFS= read -r hp; do
+    [[ -z "${hp}" ]] && continue
+    if [[ "${BASE_URL}" == "${BASE_URL_PUBLIC}" ]]; then
+      url="${BASE_URL}/api/${slug}${hp}"
+    else
+      host_port=$((PORT_BASE + port - 3000))
+      # On local mode we keep the legacy short path /health; ignore canonical
+      # full path for local probing because services bind without /api prefix
+      # consistently.
+      url="http://127.0.0.1:${host_port}/health"
+    fi
+    out="$(_curl "${url}")"
+    code="$(_http_code "${out}")"
+    body="$(_http_body "${out}")"
+    if [[ "${code}" == "200" || "${code}" == "204" || "${code}" == "401" || "${code}" == "403" ]]; then
+      if [[ "${code}" == "200" ]] && [[ "${body}" == *"ok"* || "${body}" == *"healthy"* || "${body}" == *"status"* ]]; then
+        status="pass"; detail="HTTP ${code} via ${hp}"; break
+      elif [[ "${code}" != "200" ]]; then
+        # 204/401/403 — auth gate counts as alive (process is up)
+        status="pass"; detail="HTTP ${code} via ${hp} (auth gate)"; break
+      fi
+    fi
+    detail="HTTP ${code} via ${hp} body=${body:0:60}"
+    # On local mode we only get one path; don't loop.
+    [[ "${BASE_URL}" != "${BASE_URL_PUBLIC}" ]] && break
+  done <<<"${candidate_paths}"
+  record "health:${name}" "${status}" "${detail}"
 done <<<"${SVC_LIST}"
 
 # ---------------------------------------------------------------------------
