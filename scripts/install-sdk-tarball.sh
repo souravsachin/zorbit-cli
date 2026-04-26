@@ -8,7 +8,8 @@
 #   - The container is already running; tarball will be hot-swapped.
 #
 # WHAT it does (per consumer):
-#   1. Extract SDK tarball → /app/zorbit-sdk-node/ (replace dist/ + node_modules/)
+#   1. Extract SDK tarball → /app/zorbit-sdk-node/ (replace dist/ + node_modules/).
+#      Idempotent on re-run via tmpdir-then-swap (cycle-105 (w) MSG-079).
 #   2. Run `npm rebuild @zorbit-platform/sdk-node` in the CONSUMER directory so
 #      the postinstall prune-peer-deps.js fires under ZORBIT_SDK_FORCE_PRUNE=1.
 #   3. Verify each critical transitive dep resolves from the consumer's perspective:
@@ -17,6 +18,11 @@
 #      the consumer's own node_modules.)
 #   4. If any verification fails, run `npm install --no-save <missing-pkgs>`
 #      in the consumer directory to bake them in. Re-verify.
+#   4.5. Refresh per-service BAKED-IN SDK copies (real dir, not symlink) at
+#        /app/zorbit-*/node_modules/@zorbit-platform/sdk-node/. Without this,
+#        services like identity / authz / nav (which baked the SDK at npm ci
+#        time) silently keep the stale copy after the shared SDK_DIR is
+#        updated. (cycle-105 (w) MSG-079, post-(v) finding)
 #   5. Print a JSON summary on stdout for the caller to consume.
 #
 # WHY this script exists:
@@ -149,6 +155,19 @@ resolve_pkg() {
 }
 
 # ---- Phase 1: extract SDK tarball -------------------------------------------
+# Bug-fix (cycle-105 (w) MSG-079, post-(v) finding 21:46 +07):
+#   The earlier in-place "extract, then maybe strip-components=1" heuristic
+#   was NOT idempotent. On a re-run, an outer package.json from the previous
+#   extract already existed at $SDK_DIR/package.json, so the heuristic
+#   `[[ ! -f $SDK_DIR/package.json && -f $SDK_DIR/package/package.json ]]`
+#   never fired. Result: the new tarball's leading `package/` prefix was
+#   left under $SDK_DIR/package/{package.json,dist,...} while the OLD outer
+#   files stayed in place — silent partial install. Soldier (v) hit this
+#   on identity 0.5.7 redeploy.
+#
+#   Fix: extract to a fresh tmpdir FIRST, decide layout from the tmpdir
+#   (where there are zero pre-existing files), then atomically swap into
+#   $SDK_DIR. Sidesteps the heuristic entirely; idempotent by construction.
 log "phase 1: extract ${SDK_TAR} → ${SDK_DIR}"
 if $DRY_RUN; then
   log "  --dry-run: would extract"
@@ -159,20 +178,42 @@ else
     cp -a "$SDK_DIR" "$BACKUP"
     log "  backup → $BACKUP"
   fi
-  mkdir -p "$SDK_DIR"
-  # Extract tarball. tar layout depends on producer; handle both:
-  #   (a) tarball with top-level dist/ + node_modules/ + package.json (npm pack
-  #       style) → extract IN PLACE inside SDK_DIR
-  #   (b) tarball with a leading `package/` dir (npm pack default) → strip 1
-  # Try (a) first; if package.json doesn't land at root, redo with --strip 1.
-  tar -xzf "$SDK_TAR" -C "$SDK_DIR" 2>&1 || { log "ERROR: extract failed"; exit 2; }
-  if [[ ! -f "$SDK_DIR/package.json" && -f "$SDK_DIR/package/package.json" ]]; then
-    log "  npm-pack layout detected; stripping 1 leading dir"
-    rm -rf "$SDK_DIR"
-    mkdir -p "$SDK_DIR"
-    tar -xzf "$SDK_TAR" -C "$SDK_DIR" --strip-components=1 || { log "ERROR: re-extract failed"; exit 2; }
+
+  TMP_EXTRACT="$(mktemp -d "${APP_ROOT}/.sdk-extract.XXXXXX")"
+  trap 'rm -rf "$TMP_EXTRACT"' EXIT
+  tar -xzf "$SDK_TAR" -C "$TMP_EXTRACT" 2>&1 || { log "ERROR: extract failed"; exit 2; }
+
+  # Determine source root inside the tmpdir:
+  #   (a) tarball had top-level dist/ + package.json → src=$TMP_EXTRACT
+  #   (b) tarball had leading `package/` dir         → src=$TMP_EXTRACT/package
+  if [[ -f "$TMP_EXTRACT/package.json" ]]; then
+    SRC_ROOT="$TMP_EXTRACT"
+    log "  layout: top-level (no package/ prefix)"
+  elif [[ -f "$TMP_EXTRACT/package/package.json" ]]; then
+    SRC_ROOT="$TMP_EXTRACT/package"
+    log "  layout: npm-pack style (leading package/ dir)"
+  else
+    log "ERROR: tarball has no recognisable package.json at root or package/"
+    ls -la "$TMP_EXTRACT" >&2 || true
+    exit 2
   fi
+
+  # Atomic-ish swap: clear $SDK_DIR (we backed it up above) and copy
+  # contents of SRC_ROOT into it. `cp -a SRC/. DEST/` copies including
+  # dotfiles and works across filesystems (mktemp may be on tmpfs).
+  rm -rf "$SDK_DIR"
+  mkdir -p "$SDK_DIR"
+  cp -a "${SRC_ROOT}/." "$SDK_DIR/" || { log "ERROR: copy from tmpdir failed"; exit 2; }
+  rm -rf "$TMP_EXTRACT"
+  trap - EXIT
+
   [[ -f "$SDK_DIR/package.json" ]] || { log "ERROR: SDK package.json missing after extract"; exit 2; }
+  # Defensive: if a stray $SDK_DIR/package/ subdir somehow ended up in place
+  # (extremely unlikely, but cheap to guard against re-run regression), drop it.
+  if [[ -d "$SDK_DIR/package" && -f "$SDK_DIR/package/package.json" ]]; then
+    log "  WARN: nested $SDK_DIR/package/ detected post-extract; removing"
+    rm -rf "$SDK_DIR/package"
+  fi
   SDK_VER=$(node -p "require('${SDK_DIR}/package.json').version" 2>/dev/null || echo "?")
   log "  extracted SDK ${SDK_VER}"
 fi
@@ -257,21 +298,92 @@ if [[ ${#MISSING_CRITICAL[@]} -gt 0 ]]; then
   fi
 fi
 
+# ---- Phase 4.5: refresh per-service baked-in SDK copies ---------------------
+# Bug-fix (cycle-105 (w) MSG-079, post-(v) finding 21:46 +07):
+#   Some consumers (zorbit-identity / zorbit-authorization / zorbit-navigation
+#   on dev-sandbox VM 110) have the SDK as a REAL DIRECTORY at
+#   /app/<svc>/node_modules/@zorbit-platform/sdk-node/ — not a symlink to
+#   /app/zorbit-sdk-node/. This happens when `npm ci` / `npm install` fully
+#   materialises the SDK tarball into the consumer's node_modules at
+#   bundle-bake time. After that, updating only /app/zorbit-sdk-node/ has
+#   ZERO effect on these services — they still load the stale baked copy.
+#   Soldier (v) verified this by inspecting identity's per-service path
+#   showing 0.5.5 while /app/zorbit-sdk-node/ was 0.5.7, then manually
+#   `cp`'d files in. We bake that fix into the installer here.
+#
+# What we do:
+#   For every /app/zorbit-*/node_modules/@zorbit-platform/sdk-node that
+#   exists AND is a real directory (NOT a symlink), copy the freshly-
+#   extracted dist/ + package.json from /app/zorbit-sdk-node/ over the
+#   baked copy. We do NOT touch the baked copy's node_modules/ — peer-dep
+#   resolution for those services is handled by their own consumer's
+#   node_modules walk, same as the symlinked services.
+log "phase 4.5: refresh per-service baked SDK copies"
+BAKED_REFRESHED=()
+BAKED_SKIPPED_SYMLINK=()
+if $DRY_RUN; then
+  log "  --dry-run: would scan ${APP_ROOT}/zorbit-*/node_modules/@zorbit-platform/sdk-node"
+else
+  if [[ -d "$SDK_DIR" && -f "$SDK_DIR/package.json" ]]; then
+    shopt -s nullglob
+    for SVC_PATH in "${APP_ROOT}"/zorbit-*/; do
+      [[ -d "$SVC_PATH" ]] || continue
+      SVC_NAME="$(basename "$SVC_PATH")"
+      # Skip the SDK source itself.
+      [[ "$SVC_NAME" == "zorbit-sdk-node" ]] && continue
+      PER_SVC_SDK="${SVC_PATH}node_modules/@zorbit-platform/sdk-node"
+      if [[ -L "$PER_SVC_SDK" ]]; then
+        # Symlinked consumers already pick up updates via /app/zorbit-sdk-node/.
+        BAKED_SKIPPED_SYMLINK+=("$SVC_NAME")
+        continue
+      fi
+      if [[ -d "$PER_SVC_SDK" && -f "$PER_SVC_SDK/package.json" ]]; then
+        # Real-directory baked copy. Replace package.json + dist/ from the
+        # freshly-extracted SDK. Leave its node_modules/ alone (peer-deps
+        # resolved via consumer's own walk).
+        cp -a "${SDK_DIR}/package.json" "${PER_SVC_SDK}/package.json"
+        if [[ -d "${SDK_DIR}/dist" ]]; then
+          rm -rf "${PER_SVC_SDK}/dist"
+          cp -a "${SDK_DIR}/dist" "${PER_SVC_SDK}/dist"
+        fi
+        # Refresh ancillary files consumers may reference.
+        for f in README.md LICENSE CHANGELOG.md; do
+          if [[ -f "${SDK_DIR}/${f}" ]]; then
+            cp -a "${SDK_DIR}/${f}" "${PER_SVC_SDK}/${f}" 2>/dev/null || true
+          fi
+        done
+        BAKED_REFRESHED+=("$SVC_NAME")
+        log "    refreshed baked SDK in ${SVC_NAME}"
+      fi
+    done
+    shopt -u nullglob
+  fi
+  if [[ ${#BAKED_REFRESHED[@]} -eq 0 ]]; then
+    log "  no per-service baked-direct copies found (all consumers symlinked or absent)"
+  else
+    log "  refreshed ${#BAKED_REFRESHED[@]} baked copy/copies: ${BAKED_REFRESHED[*]}"
+  fi
+fi
+
 # ---- Phase 5: summarise -----------------------------------------------------
 log "phase 5: summary"
 SDK_VER_OUT="${SDK_VER:-?}"
 RESOLVED_LIST=$(printf '"%s",' "${RESOLVED[@]}" | sed 's/,$//')
 MISSING_LIST=$(printf '"%s",' "${MISSING_CRITICAL[@]}" | sed 's/,$//')
+BAKED_REFRESHED_LIST=$(printf '"%s",' "${BAKED_REFRESHED[@]}" | sed 's/,$//')
+BAKED_SYMLINK_LIST=$(printf '"%s",' "${BAKED_SKIPPED_SYMLINK[@]}" | sed 's/,$//')
 cat <<JSON
 {
-  "service":         "${SVC}",
-  "sdk_version":     "${SDK_VER_OUT}",
-  "sdk_dir":         "${SDK_DIR}",
-  "consumer_dir":    "${SVC_DIR}",
-  "resolved":        [${RESOLVED_LIST}],
-  "missing_baked":   [${MISSING_LIST}],
-  "dry_run":         ${DRY_RUN},
-  "result":          "ok"
+  "service":               "${SVC}",
+  "sdk_version":           "${SDK_VER_OUT}",
+  "sdk_dir":               "${SDK_DIR}",
+  "consumer_dir":          "${SVC_DIR}",
+  "resolved":              [${RESOLVED_LIST}],
+  "missing_baked":         [${MISSING_LIST}],
+  "baked_refreshed":       [${BAKED_REFRESHED_LIST}],
+  "baked_skipped_symlink": [${BAKED_SYMLINK_LIST}],
+  "dry_run":               ${DRY_RUN},
+  "result":                "ok"
 }
 JSON
 
