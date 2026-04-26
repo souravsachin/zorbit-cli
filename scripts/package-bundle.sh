@@ -150,6 +150,7 @@ ctx = {
     "VERSION": version,
     "ENV_PREFIX": env_prefix,
     "CONTAINER_NAME": f"{env_prefix}-{bundle}",
+    "IMAGE_REGISTRY_BASE": "ghcr.io/souravsachin",
 }
 def sub(m):
     key = m.group(1).strip()
