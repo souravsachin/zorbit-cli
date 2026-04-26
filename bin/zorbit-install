@@ -1,0 +1,290 @@
+#!/usr/bin/env bash
+# =============================================================================
+# bin/zorbit-install
+#
+# Single-shell-entry unified Zorbit installer.
+#
+# Owner directives:
+#   - MSG-097 (2026-04-27): single shell-based unified installer with
+#     layer-aware execution + tasksel-style prereq self-fix.
+#   - MSG-098 (2026-04-27): strict provider/hypervisor genericity. The main
+#     installer must NOT mention specific hypervisor or cloud provider names.
+#     All provider-specific logic lives in scripts/adapters/<kind>/<name>.sh.
+#
+# Architecture:
+#   Layers 0-6, each in its own script under scripts/install/layer-N-*.sh.
+#   Adapters under scripts/adapters/<kind>/<name>.sh implementing a documented
+#   contract per kind (hypervisor, cloud_dns, cert_provider, auth_provider).
+#
+# State file:
+#   /etc/zorbit/install-state.json  (or $INSTALL_STATE_FILE override)
+#
+# Usage:
+#   zorbit-install                                          # interactive, full run
+#   zorbit-install --env=qa --preset=recommended --yes      # non-interactive
+#   zorbit-install --resume                                 # pick up from state
+#   zorbit-install --layer=2,3                              # only specific layers
+#   zorbit-install --hypervisor=<name> --dns=<name>      # explicit adapters
+#   zorbit-install --check                                  # prereq check only
+#   zorbit-install --dry-run                                # walk all layers, no side-effects
+#   zorbit-install --version
+#
+# Exit codes:
+#   0   success
+#   1   prereq / runtime check failed
+#   2   user cancelled
+#   3   layer failed
+#   4   adapter contract violation
+# =============================================================================
+set -euo pipefail
+
+ZORBIT_INSTALL_VERSION="1.0.0"
+
+# ---- locate self ----------------------------------------------------------
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$BIN_DIR/.." && pwd)"
+INSTALL_DIR="${REPO_DIR}/scripts/install"
+ADAPTERS_DIR="${REPO_DIR}/scripts/adapters"
+
+# ---- source libs ----------------------------------------------------------
+# shellcheck disable=SC1091
+source "${INSTALL_DIR}/lib/ui.sh"
+# shellcheck disable=SC1091
+source "${INSTALL_DIR}/lib/state.sh"
+# shellcheck disable=SC1091
+source "${INSTALL_DIR}/lib/prompt.sh"
+
+# ---- defaults --------------------------------------------------------------
+INSTALL_ENV_NAME="${INSTALL_ENV_NAME:-}"
+INSTALL_PRESET="${INSTALL_PRESET:-recommended}"
+INSTALL_NON_INTERACTIVE="${INSTALL_NON_INTERACTIVE:-0}"
+INSTALL_DRY_RUN="${INSTALL_DRY_RUN:-0}"
+INSTALL_CHECK_ONLY="${INSTALL_CHECK_ONLY:-0}"
+INSTALL_RESUME="${INSTALL_RESUME:-0}"
+INSTALL_SELECTED_LAYERS=""
+INSTALL_ADAPTER_HYPERVISOR=""
+INSTALL_ADAPTER_DNS=""
+INSTALL_ADAPTER_CERT=""
+INSTALL_ADAPTER_AUTH=""
+SHOW_VERSION=0
+SHOW_HELP=0
+
+# ---- arg parsing ----------------------------------------------------------
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --env=*)         INSTALL_ENV_NAME="${1#*=}"; shift ;;
+      --env)           INSTALL_ENV_NAME="$2"; shift 2 ;;
+      --preset=*)      INSTALL_PRESET="${1#*=}"; shift ;;
+      --preset)        INSTALL_PRESET="$2"; shift 2 ;;
+      --yes|-y)        INSTALL_NON_INTERACTIVE=1; shift ;;
+      --dry-run)       INSTALL_DRY_RUN=1; shift ;;
+      --check)         INSTALL_CHECK_ONLY=1; shift ;;
+      --skip-prereqs)  INSTALL_SKIP_PREREQS=1; shift ;;
+      --resume)        INSTALL_RESUME=1; shift ;;
+      --layer=*)       INSTALL_SELECTED_LAYERS="${1#*=}"; shift ;;
+      --layer)         INSTALL_SELECTED_LAYERS="$2"; shift 2 ;;
+      --hypervisor=*)  INSTALL_ADAPTER_HYPERVISOR="${1#*=}"; shift ;;
+      --hypervisor)    INSTALL_ADAPTER_HYPERVISOR="$2"; shift 2 ;;
+      --dns=*)         INSTALL_ADAPTER_DNS="${1#*=}"; shift ;;
+      --dns)           INSTALL_ADAPTER_DNS="$2"; shift 2 ;;
+      --cert=*)        INSTALL_ADAPTER_CERT="${1#*=}"; shift ;;
+      --cert)          INSTALL_ADAPTER_CERT="$2"; shift 2 ;;
+      --auth=*)        INSTALL_ADAPTER_AUTH="${1#*=}"; shift ;;
+      --auth)          INSTALL_ADAPTER_AUTH="$2"; shift 2 ;;
+      --version|-V)    SHOW_VERSION=1; shift ;;
+      --help|-h)       SHOW_HELP=1; shift ;;
+      *) ui_die "Unknown arg: $1 (use --help)" ;;
+    esac
+  done
+
+  export INSTALL_ENV_NAME INSTALL_PRESET
+  export INSTALL_NON_INTERACTIVE INSTALL_DRY_RUN INSTALL_CHECK_ONLY
+  export INSTALL_SKIP_PREREQS="${INSTALL_SKIP_PREREQS:-0}"
+  export INSTALL_ADAPTER_HYPERVISOR INSTALL_ADAPTER_DNS
+  export INSTALL_ADAPTER_CERT INSTALL_ADAPTER_AUTH
+}
+
+show_help() {
+  cat <<HELP
+zorbit-install — unified Zorbit installer (v${ZORBIT_INSTALL_VERSION})
+
+USAGE
+  zorbit-install [flags]
+
+FLAGS
+  --env <name>             Environment name (dev|qa|demo|uat|prod). Required for full run.
+  --preset <name>          Install preset (minimal|recommended|max|...). Default: recommended.
+  --yes, -y                Non-interactive — auto-fix safe issues, accept defaults.
+  --dry-run                Walk all layers, write state, but do nothing destructive.
+  --check                  Run layer 0 + 1 only (detect + prereqs).
+  --resume                 Continue from the existing state file.
+  --layer <list>           Run only the listed layers, e.g. --layer=2,3.
+  --hypervisor <name>      Hypervisor adapter (see scripts/adapters/hypervisor/).
+  --dns <name>             Cloud-DNS adapter (see scripts/adapters/cloud_dns/).
+  --cert <name>            Cert-provider adapter.
+  --auth <name>            Auth-provider adapter.
+  --version, -V            Show version and exit.
+  --help, -h               Show this help.
+
+EXAMPLES
+  # Interactive first-time install
+  zorbit-install --env=qa
+
+  # Fully automated
+  zorbit-install --env=qa --preset=recommended --yes
+
+  # Resume after a failure (state file remembers where we got to)
+  zorbit-install --resume
+
+  # Just run prereq check
+  zorbit-install --check
+
+  # Walk through with no side effects
+  zorbit-install --env=qa --preset=recommended --dry-run --yes
+
+ADAPTERS
+  Hypervisor:    $(ls "${ADAPTERS_DIR}/hypervisor"     2>/dev/null | sed 's/\.sh$//' | tr '\n' ' ')
+  Cloud DNS:     $(ls "${ADAPTERS_DIR}/cloud_dns"      2>/dev/null | sed 's/\.sh$//' | tr '\n' ' ')
+  Cert provider: $(ls "${ADAPTERS_DIR}/cert_provider"  2>/dev/null | sed 's/\.sh$//' | tr '\n' ' ')
+  Auth provider: $(ls "${ADAPTERS_DIR}/auth_provider"  2>/dev/null | sed 's/\.sh$//' | tr '\n' ' ')
+
+  Add a new adapter by dropping a .sh file under scripts/adapters/<kind>/<name>.sh
+  implementing the contract documented in 00_docs/platform/unified-installer.md.
+
+STATE FILE
+  ${INSTALL_STATE_FILE}
+
+HELP
+}
+
+# ---- layer registry --------------------------------------------------------
+LAYERS=(
+  "0_detect|Detect runtime|layer_0_detect|${INSTALL_DIR}/layer-0-detect.sh"
+  "1_prereqs|Prereqs|layer_1_prereqs|${INSTALL_DIR}/layer-1-prereqs.sh"
+  "2_provision|Provision VM|layer_2_provision|${INSTALL_DIR}/layer-2-provision.sh"
+  "3_bootstrap|Bootstrap VM|layer_3_bootstrap|${INSTALL_DIR}/layer-3-bootstrap.sh"
+  "4_shared_infra|Shared infra|layer_4_shared_infra|${INSTALL_DIR}/layer-4-shared-infra.sh"
+  "5_app_stack|App stack|layer_5_app_stack|${INSTALL_DIR}/layer-5-app-stack.sh"
+  "6_post_deploy|Post-deploy|layer_6_post_deploy|${INSTALL_DIR}/layer-6-post-deploy.sh"
+)
+
+# Returns 0 if the given layer key was selected (or no selection).
+layer_selected() {
+  local key="$1"
+  [[ -z "$INSTALL_SELECTED_LAYERS" ]] && return 0
+  local short="${key%%_*}"   # "2_provision" -> "2"
+  IFS=',' read -ra arr <<< "$INSTALL_SELECTED_LAYERS"
+  for x in "${arr[@]}"; do
+    [[ "$x" = "$short" || "$x" = "$key" ]] && return 0
+  done
+  return 1
+}
+
+run_layer() {
+  local key="$1" desc="$2" fn="$3" path="$4"
+  local idx
+  case "$key" in
+    0_detect)        idx=1 ;;
+    1_prereqs)       idx=2 ;;
+    2_provision)     idx=3 ;;
+    3_bootstrap)     idx=4 ;;
+    4_shared_infra)  idx=5 ;;
+    5_app_stack)     idx=6 ;;
+    6_post_deploy)   idx=7 ;;
+  esac
+
+  ui_layer_header "$idx" "${#LAYERS[@]}" "$desc"
+
+  if [[ "$INSTALL_RESUME" = "1" ]]; then
+    local cur_status
+    cur_status="$(state_layer_status "$key")"
+    if [[ "$cur_status" = "done" ]]; then
+      ui_ok "already done — skipping (resume)"
+      return 0
+    fi
+  fi
+
+  if ! layer_selected "$key"; then
+    ui_info "skipping (not in --layer selection)"
+    return 0
+  fi
+
+  # shellcheck disable=SC1090
+  source "$path"
+  "$fn"
+}
+
+main() {
+  parse_args "$@"
+
+  if [[ "$SHOW_VERSION" = "1" ]]; then
+    echo "zorbit-install ${ZORBIT_INSTALL_VERSION}"
+    exit 0
+  fi
+  if [[ "$SHOW_HELP" = "1" ]]; then
+    show_help
+    exit 0
+  fi
+
+  ui_banner
+
+  # --check mode: only run layer 0 + 1.
+  if [[ "$INSTALL_CHECK_ONLY" = "1" ]]; then
+    ui_section "Prereq check only"
+    INSTALL_STATE_FILE="${INSTALL_STATE_FILE:-/tmp/zorbit-install-check-$$.json}"
+    export INSTALL_STATE_FILE
+    state_init "${INSTALL_ENV_NAME:-check}"
+    run_layer 0_detect "Detect runtime" layer_0_detect "${INSTALL_DIR}/layer-0-detect.sh"
+    run_layer 1_prereqs "Prereqs" layer_1_prereqs "${INSTALL_DIR}/layer-1-prereqs.sh"
+    echo
+    ui_ok "Check complete. State at ${INSTALL_STATE_FILE}"
+    exit 0
+  fi
+
+  # Full run: env name is required.
+  if [[ -z "$INSTALL_ENV_NAME" && "$INSTALL_RESUME" != "1" ]]; then
+    ui_die "--env is required (e.g. --env=qa). Or pass --resume to continue an earlier run."
+  fi
+
+  # Initialise state.
+  state_init "${INSTALL_ENV_NAME:-resume}"
+
+  # Persist adapter selections.
+  [[ -n "$INSTALL_ADAPTER_HYPERVISOR" ]] && state_adapter_set hypervisor    "$INSTALL_ADAPTER_HYPERVISOR"
+  [[ -n "$INSTALL_ADAPTER_DNS"        ]] && state_adapter_set cloud_dns     "$INSTALL_ADAPTER_DNS"
+  [[ -n "$INSTALL_ADAPTER_CERT"       ]] && state_adapter_set cert_provider "$INSTALL_ADAPTER_CERT"
+  [[ -n "$INSTALL_ADAPTER_AUTH"       ]] && state_adapter_set auth_provider "$INSTALL_ADAPTER_AUTH"
+
+  ui_section "Plan"
+  ui_row "env"        "ok" "${INSTALL_ENV_NAME:-(from state)}"
+  ui_row "preset"     "ok" "$INSTALL_PRESET"
+  ui_row "dry-run"    "$([[ "$INSTALL_DRY_RUN" = "1" ]] && echo ok || echo skip)" \
+                       "$([[ "$INSTALL_DRY_RUN" = "1" ]] && echo enabled || echo disabled)"
+  ui_row "non-interactive" "$([[ "$INSTALL_NON_INTERACTIVE" = "1" ]] && echo ok || echo skip)" \
+                            "$([[ "$INSTALL_NON_INTERACTIVE" = "1" ]] && echo yes || echo no)"
+  ui_row "state file" "ok" "$INSTALL_STATE_FILE"
+  ui_row "adapter:hypervisor"    "$([[ -n "$(state_adapter_get hypervisor)"    ]] && echo ok || echo skip)" "$(state_adapter_get hypervisor)"
+  ui_row "adapter:cloud_dns"     "$([[ -n "$(state_adapter_get cloud_dns)"     ]] && echo ok || echo skip)" "$(state_adapter_get cloud_dns)"
+  ui_row "adapter:cert_provider" "$([[ -n "$(state_adapter_get cert_provider)" ]] && echo ok || echo skip)" "$(state_adapter_get cert_provider)"
+  ui_row "adapter:auth_provider" "$([[ -n "$(state_adapter_get auth_provider)" ]] && echo ok || echo skip)" "$(state_adapter_get auth_provider)"
+
+  if [[ "$INSTALL_RESUME" = "1" ]]; then
+    ui_section "Resume — current state"
+    state_summary
+  fi
+
+  # Run all layers in order.
+  for entry in "${LAYERS[@]}"; do
+    IFS='|' read -r key desc fn path <<< "$entry"
+    run_layer "$key" "$desc" "$fn" "$path" || { ui_die "Layer ${key} failed — see ${INSTALL_STATE_FILE}"; }
+  done
+
+  echo
+  ui_ok "Install complete. State: ${INSTALL_STATE_FILE}"
+  echo
+  ui_section "Final state"
+  state_summary
+}
+
+main "$@"
