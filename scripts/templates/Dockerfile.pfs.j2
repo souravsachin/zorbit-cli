@@ -152,11 +152,6 @@ COPY 02_repos/zorbit-pfs-white_label/package.json                 /app/zorbit-pf
 COPY 02_repos/zorbit-pfs-white_label/package-lock.json            /app/zorbit-pfs-white_label/package-lock.json
 COPY 02_repos/zorbit-pfs-white_label/zorbit-module-manifest.json  /app/zorbit-pfs-white_label/zorbit-module-manifest.json
 
-COPY 02_repos/zorbit-pfs-workflow/dist                         /app/zorbit-pfs-workflow/dist
-COPY 02_repos/zorbit-pfs-workflow/package.json                 /app/zorbit-pfs-workflow/package.json
-COPY 02_repos/zorbit-pfs-workflow/package-lock.json            /app/zorbit-pfs-workflow/package-lock.json
-COPY 02_repos/zorbit-pfs-workflow/zorbit-module-manifest.json  /app/zorbit-pfs-workflow/zorbit-module-manifest.json
-
 COPY 02_repos/zorbit-pfs-workflow_engine/dist                         /app/zorbit-pfs-workflow_engine/dist
 COPY 02_repos/zorbit-pfs-workflow_engine/package.json                 /app/zorbit-pfs-workflow_engine/package.json
 COPY 02_repos/zorbit-pfs-workflow_engine/package-lock.json            /app/zorbit-pfs-workflow_engine/package-lock.json
@@ -195,7 +190,6 @@ RUN set -eux; \
       zorbit-pfs-voice \
       zorbit-pfs-voice_engine \
       zorbit-pfs-white_label \
-      zorbit-pfs-workflow \
       zorbit-pfs-workflow_engine \
       zorbit-pfs-zmb_factory ; do \
       if [ -f "/app/${svc}/package.json" ]; then \
