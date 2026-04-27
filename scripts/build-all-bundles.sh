@@ -55,6 +55,21 @@ echo "==> Preflight: silent-fail service guards"
 bash "${SCRIPT_DIR}/preflight-services-check.sh" \
   || { echo "FAILED preflight: fix the silent-fail guards above"; exit 1; }
 
+# -------------------------------------------------------------------------
+# (qq) 2026-04-27 — sdk-node version drift in package-lock.json files.
+# `npm ci` aborts with EUSAGE when lock != package.json. Auto-fix wipes
+# stale node_modules + regenerates the lock so the docker build can use
+# `npm ci --omit=dev`. Set ZORBIT_BUILD_NO_LOCK_FIX=1 to abort instead.
+# -------------------------------------------------------------------------
+echo "==> Preflight: sdk-node lock-file sync"
+if [[ "${ZORBIT_BUILD_NO_LOCK_FIX:-0}" == "1" ]]; then
+  bash "${SCRIPT_DIR}/preflight-sdk-lock-sync.sh" \
+    || { echo "FAILED preflight: stale lock files (set ZORBIT_BUILD_NO_LOCK_FIX=0 to auto-regen)"; exit 1; }
+else
+  bash "${SCRIPT_DIR}/preflight-sdk-lock-sync.sh" --fix \
+    || { echo "FAILED preflight: lock-regen could not finish — see /tmp/regen-*.log"; exit 1; }
+fi
+
 echo "==> Building ${#BUNDLES[@]} bundles for env=${ENV_PREFIX} version=${VERSION} platform=${PLATFORM}"
 START=$(date +%s)
 
