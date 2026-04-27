@@ -40,6 +40,32 @@ layer_6_post_deploy() {
   ssh "$ssh_target" "sudo -u ${svc_user} bash /etc/zorbit/scripts/post-deploy-bootstrap.sh --env ${env_name} --yes" \
     || ui_warn "post-deploy seed reported errors (continuing)"
 
+  # ---------------------------------------------------------------------
+  # D1..D9 defect phases (wired 2026-04-27, soldier oo)
+  # Owner directive MSG-107: every env spin-up MUST run these phases.
+  # The verify-e2e gate (D9) ABORTS layer-6 if the env isn't truly usable.
+  # ---------------------------------------------------------------------
+  if [[ -n "${INSTALL_RUN_DEFECT_PHASES:-1}" && "${INSTALL_RUN_DEFECT_PHASES}" != "0" ]]; then
+    ui_info "running D1..D9 defect-prevention phases"
+    local sa_email="${INSTALL_SUPER_ADMIN_EMAIL:-${SUPER_ADMIN_EMAIL:-}}"
+    local sa_pass="${INSTALL_SUPER_ADMIN_PASSWORD:-${SUPER_ADMIN_PASSWORD:-}}"
+    local sa_json="${INSTALL_SUPER_ADMINS_JSON:-/etc/zorbit/${env_name}/super_admins.json}"
+    local image_tag="${INSTALL_IMAGE_TAG:-${IMAGE_TAG:-}}"
+    if [[ -z "$sa_email" || -z "$sa_pass" ]]; then
+      ui_warn "INSTALL_SUPER_ADMIN_EMAIL/PASSWORD unset — skipping D9 verify (NOT recommended)"
+    else
+      ENV_PREFIX="${env_name}" \
+      IMAGE_TAG="$image_tag" \
+      SUPER_ADMINS_JSON="$sa_json" \
+      SUPER_ADMIN_EMAIL="$sa_email" \
+      SUPER_ADMIN_PASSWORD="$sa_pass" \
+      PUBLIC_URL="$public_url" \
+      SSH_TARGET="${ssh_target}" \
+      bash "${SCRIPT_DIR}/run-defect-phases.sh" "${env_name}" \
+        || { ui_die "D1..D9 defect phases failed — env is NOT usable. See /var/log/zorbit-install/*.json"; }
+    fi
+  fi
+
   ui_info "probing public health endpoint: ${public_url}"
   local code
   code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "${public_url}/api/v1/G/health" || echo "000")"
