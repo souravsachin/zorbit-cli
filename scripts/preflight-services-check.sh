@@ -209,11 +209,27 @@ check_dist_main_present() {
     repo_name="$(basename "$repo")"
     if [[ -d "$repo/dist" ]] && [[ ! -f "$repo/dist/main.js" ]]; then
       # Some services emit dist/src/main.js — accept that variant
-      if [[ ! -f "$repo/dist/src/main.js" ]]; then
-        fail "F5-no-main-js" \
-          "${repo_name}/dist/ exists but neither dist/main.js nor dist/src/main.js was emitted" \
-          "Run \`npm run build\` in this repo. Common causes: tsc emit error suppressed by a stale tsbuildinfo; rootDir/include misconfigured. Delete dist/ + tsconfig.build.tsbuildinfo and rebuild."
+      if [[ -f "$repo/dist/src/main.js" ]]; then
+        continue
       fi
+      # Vite/SPA repos emit dist/index.html + dist/assets/ instead of main.js.
+      # Recognise by either index.html in dist/ or by package.json having a
+      # `vite` script. (qq) installer-improvement fix 2026-04-27 — F5 was
+      # firing on legitimately built SPA bundles.
+      if [[ -f "$repo/dist/index.html" ]] || [[ -d "$repo/dist/assets" ]]; then
+        continue
+      fi
+      if [[ -f "$repo/package.json" ]] && grep -qE '"build":\s*"vite' "$repo/package.json" 2>/dev/null; then
+        # Vite SPA but dist/ is empty/partial — flag separately so it's
+        # actionable, but don't claim missing main.js.
+        fail "F5-spa-empty-dist" \
+          "${repo_name}/dist/ exists but neither index.html nor assets/ found (vite build never completed)" \
+          "Run \`npm run build\` in this repo. Vite emits dist/index.html + dist/assets/ for SPAs."
+        continue
+      fi
+      fail "F5-no-main-js" \
+        "${repo_name}/dist/ exists but neither dist/main.js nor dist/src/main.js was emitted" \
+        "Run \`npm run build\` in this repo. Common causes: tsc emit error suppressed by a stale tsbuildinfo; rootDir/include misconfigured. Delete dist/ + tsconfig.build.tsbuildinfo and rebuild."
     fi
   done < <(list_service_repos)
 }
