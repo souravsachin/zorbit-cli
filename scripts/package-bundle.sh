@@ -165,9 +165,14 @@ log "Rendered Dockerfile → ${RENDERED_DOCKERFILE}"
 if [[ "${SKIP_BUILD}" != "true" ]]; then
   log "Building image ${IMAGE_REF} (platform=${PLATFORM})..."
   # Build context = workspace root so that Dockerfile can COPY from 02_repos/*
+  # NOCACHE_FLAG: set ZORBIT_BUILD_NO_CACHE=1 to force rebuild (fixes stale
+  # cached COPY layers after lock files were regenerated). (qq) 2026-04-27.
+  NOCACHE_FLAG=""
+  [[ "${ZORBIT_BUILD_NO_CACHE:-0}" == "1" ]] && NOCACHE_FLAG="--no-cache"
   if ! docker buildx build \
         --platform "${PLATFORM}" \
         --load \
+        ${NOCACHE_FLAG} \
         -t "${IMAGE_REF}" \
         -f "${RENDERED_DOCKERFILE}" \
         "${WORKSPACE_ROOT}" ; then
