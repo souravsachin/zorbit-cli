@@ -22,7 +22,11 @@
 set -euo pipefail
 
 ENV_PREFIX="${ENV_PREFIX:-${1:-}}"
-PUBLIC_URL="${PUBLIC_URL:-https://zorbit-${ENV_PREFIX}.onezippy.ai}"
+case "$ENV_PREFIX" in
+  ze) ENV_HOSTNAME_SLUG=dev ;; zq) ENV_HOSTNAME_SLUG=qa ;; zd) ENV_HOSTNAME_SLUG=demo ;;
+  zu) ENV_HOSTNAME_SLUG=uat ;; zp) ENV_HOSTNAME_SLUG=prod ;; *) ENV_HOSTNAME_SLUG="$ENV_PREFIX" ;;
+esac
+PUBLIC_URL="${PUBLIC_URL:-https://zorbit-${ENV_HOSTNAME_SLUG}.onezippy.ai}"
 ADMIN_JWT="${ADMIN_JWT:-}"
 REPOS_DIR="${REPOS_DIR:-}"
 SSH_TARGET="${SSH_TARGET:-}"
@@ -48,16 +52,33 @@ done < <(find "$REPOS_DIR" -maxdepth 3 -name "zorbit-module-manifest.json" 2>/de
 
 echo "==> registering ${#manifests[@]} manifests against $PUBLIC_URL"
 
-ok=0; existed=0; failed=0; failed_ids=""
+# If the deployed registry uses a stale validator (D1: image > 24h), the
+# manifest-v2 enum may be label-style ("Platform Core") not slug-style
+# ("platform"). On 422, the script auto-retries with a minimal-DTO payload
+# that bypasses v2 validation. The registry row is created but without
+# placement metadata — the operator must rebuild + redeploy fresh image
+# to get full menu rendering. The D1 preflight catches this case.
+ok=0; existed=0; failed=0; failed_ids=""; minimal_fallback=0
 for m in "${manifests[@]}"; do
   mid=$(jq -r .moduleId "$m" 2>/dev/null || echo "")
   [[ -z "$mid" || "$mid" == "null" ]] && { echo "  SKIP (no moduleId): $m"; continue; }
-  # post directly with full manifest
+  # 1st attempt: full manifest
   resp=$(curl -sS -m 30 -o /tmp/_reg-resp.json -w '%{http_code}' \
     -X POST "${PUBLIC_URL}/api/module_registry/api/v1/G/modules" \
     -H "Authorization: Bearer ${ADMIN_JWT}" \
     -H 'Content-Type: application/json' \
     --data "@${m}" 2>/dev/null || echo "000")
+  # 2nd attempt: stale-validator fallback — strip placement+guide so v2
+  # validation is skipped (controller's looksLikeFullManifest gate)
+  if [[ "$resp" == "422" ]]; then
+    min_body=$(jq '{moduleId, moduleName, moduleType, version, manifestUrl: (.registration.manifestUrl // "")}' "$m" 2>/dev/null)
+    resp=$(curl -sS -m 30 -o /tmp/_reg-resp.json -w '%{http_code}' \
+      -X POST "${PUBLIC_URL}/api/module_registry/api/v1/G/modules" \
+      -H "Authorization: Bearer ${ADMIN_JWT}" \
+      -H 'Content-Type: application/json' \
+      --data "$min_body" 2>/dev/null || echo "000")
+    [[ "$resp" =~ ^(200|201|409)$ ]] && minimal_fallback=$((minimal_fallback+1))
+  fi
   case "$resp" in
     201|200)
       ok=$((ok+1))
@@ -77,7 +98,7 @@ for m in "${manifests[@]}"; do
 done
 
 echo
-echo "==> register-all-modules: ok=$ok existed=$existed failed=$failed"
+echo "==> register-all-modules: ok=$ok existed=$existed failed=$failed (minimal_fallback=$minimal_fallback)"
 
 # verify in DB if zs-pg reachable
 total=""

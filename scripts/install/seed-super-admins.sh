@@ -40,11 +40,11 @@ mkdir -p "$REPORT_DIR" 2>/dev/null || REPORT_DIR=/tmp
 [[ -z "$SA_JSON" || ! -f "$SA_JSON" ]] && { echo "ERR: SUPER_ADMINS_JSON file required"; exit 1; }
 
 run_pg() {
-  local db="$1" sql="$2"
+  local db="$1" sql="$2" flags="${3:-}"
   if [[ -n "$SSH_TARGET" ]]; then
-    ssh "$SSH_TARGET" "sudo docker exec -i $PG_CONTAINER psql -U zorbit -d $db" <<<"$sql"
+    ssh "$SSH_TARGET" "sudo docker exec -i $PG_CONTAINER psql -U zorbit -d $db $flags" <<<"$sql"
   else
-    docker exec -i "$PG_CONTAINER" psql -U zorbit -d "$db" <<<"$sql"
+    docker exec -i "$PG_CONTAINER" psql -U zorbit -d "$db" $flags <<<"$sql"
   fi
 }
 
@@ -96,14 +96,34 @@ if [[ -n "$SSH_TARGET" ]]; then
 else
   docker cp /tmp/_register-admins.py "$CORE_CONTAINER:/tmp/_register-admins.py"
 fi
-register_out=$(run_core "python3 /tmp/_register-admins.py" 2>&1 | tail -1 || echo "FAIL")
+register_out=$(run_core "python3 /tmp/_register-admins.py 2>/dev/null || node -e 'console.log(\"NO_PY3_FALLBACK\")'" 2>&1 | tail -1 || echo "FAIL")
 echo "  $register_out"
+
+# Bash/curl fallback if python3 not available (e.g. minimal alpine container)
+if [[ "$register_out" == *"NO_PY3"* || "$register_out" == *"not found"* || "$register_out" == "FAIL" ]]; then
+  echo "  (no python3 in core container — falling back to host loop)"
+  created_fb=0; existed_fb=0
+  while IFS= read -r row; do
+    email=$(echo "$row" | jq -r .email)
+    pwd=$(echo "$row" | jq -r .password)
+    name=$(echo "$row" | jq -r '.full_name // .name // (.email | split("@")[0])')
+    fn=$(echo "$name" | awk '{print $1}')
+    ln=$(echo "$name" | awk '{$1=""; sub(/^ */,""); print (NF?$0:"X")}')
+    pwd_hash=$(printf '%s' "$pwd" | sha256sum | awk '{print $1}')
+    body=$(jq -nc --arg e "$email" --arg p "$pwd_hash" --arg fn "$fn" --arg ln "$ln" '{email:$e, password:$p, firstName:$fn, lastName:$ln}')
+    out=$(run_core "curl -sS -m 60 -X POST http://localhost:${IDENTITY_PORT}/api/v1/G/auth/register -H 'Content-Type: application/json' -d '$body'" 2>/dev/null || echo "")
+    [[ "$out" == *"userId"* ]] && created_fb=$((created_fb+1))
+    [[ "$out" == *"already"* || "$out" == *"exists"* ]] && existed_fb=$((existed_fb+1))
+  done < <(jq -c '.super_admins[]' "$SA_JSON")
+  register_out="CREATED=${created_fb} EXISTED=${existed_fb} (bash-fallback)"
+  echo "  $register_out"
+fi
 
 # Step (b): set users.role='super_admin' for every email in super_admins.json
 echo "==> Step (b) marking users.role=super_admin"
 emails=$(jq -r '.super_admins[].email' "$SA_JSON" | sed "s/'/''/g" | awk '{print "\x27"$0"\x27"}' | paste -sd, -)
 run_pg zorbit_identity "UPDATE users SET role='super_admin', status='active' WHERE email IN ($emails);" >/dev/null
-roles_set=$(run_pg zorbit_identity "SELECT COUNT(*) FROM users WHERE role='super_admin' AND email IN ($emails);" 2>&1 | tail -1 | tr -d ' ')
+roles_set=$(run_pg zorbit_identity "SELECT COUNT(*) FROM users WHERE role='super_admin' AND email IN ($emails);" "-tA" 2>&1 | tail -1 | tr -d ' ')
 echo "  users marked: $roles_set"
 
 # Step (c): admin_assignments
@@ -119,7 +139,7 @@ ON CONFLICT DO NOTHING;
 # zorbit_identity.users."hashId"; we have to query it then INSERT into
 # zorbit_authorization.user_roles. Two-step query (no dblink dep).
 echo "==> Step (d) granting R-SADMIN via user_roles"
-hash_ids=$(run_pg zorbit_identity "SELECT \"hashId\" FROM users WHERE email IN ($emails);" | grep -oE 'U-[A-Z0-9]+' | sort -u)
+hash_ids=$(run_pg zorbit_identity "SELECT \"hashId\" FROM users WHERE email IN ($emails);" "-tA" | grep -oE 'U-[A-Z0-9]+' | sort -u)
 grants=0
 for h in $hash_ids; do
   out=$(run_pg zorbit_authorization "
@@ -131,7 +151,7 @@ for h in $hash_ids; do
 done
 echo "  user_roles inserted: $grants new (existing rows unchanged)"
 
-total_grants=$(run_pg zorbit_authorization "SELECT COUNT(*) FROM user_roles WHERE role_hash_id='R-SADMIN';" | tail -1 | tr -d ' ')
+total_grants=$(run_pg zorbit_authorization "SELECT COUNT(*) FROM user_roles WHERE role_hash_id='R-SADMIN';" "-tA" | tail -1 | tr -d ' ')
 
 declared_count=$(jq '.super_admins | length' "$SA_JSON")
 {

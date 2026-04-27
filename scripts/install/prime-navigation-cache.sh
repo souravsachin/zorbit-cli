@@ -24,7 +24,11 @@
 set -euo pipefail
 
 ENV_PREFIX="${ENV_PREFIX:-${1:-}}"
-PUBLIC_URL="${PUBLIC_URL:-https://zorbit-${ENV_PREFIX}.onezippy.ai}"
+case "$ENV_PREFIX" in
+  ze) ENV_HOSTNAME_SLUG=dev ;; zq) ENV_HOSTNAME_SLUG=qa ;; zd) ENV_HOSTNAME_SLUG=demo ;;
+  zu) ENV_HOSTNAME_SLUG=uat ;; zp) ENV_HOSTNAME_SLUG=prod ;; *) ENV_HOSTNAME_SLUG="$ENV_PREFIX" ;;
+esac
+PUBLIC_URL="${PUBLIC_URL:-https://zorbit-${ENV_HOSTNAME_SLUG}.onezippy.ai}"
 ADMIN_JWT="${ADMIN_JWT:-}"
 ADMIN_UHID="${ADMIN_USER_HASH_ID:-${2:-}}"
 CORE_CONTAINER="${ENV_CORE_CONTAINER:-${ENV_PREFIX}-core}"
@@ -42,7 +46,12 @@ if [[ -n "$SSH_TARGET" ]]; then
 else
   docker exec "$CORE_CONTAINER" pm2 restart zorbit-navigation >/dev/null 2>&1 || true
 fi
-sleep 8
+# Wait for navigation to come back up — poll /health for ≤ 60s
+for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  sleep 5
+  health_code=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' "${PUBLIC_URL}/api/navigation/api/v1/G/health" 2>/dev/null || echo "000")
+  [[ "$health_code" == "200" ]] && { echo "  navigation healthy after $((i*5))s"; break; }
+done
 
 # Step 2: hit the rebuild endpoint (best-effort; not all builds expose it)
 echo "==> POST cache/rebuild (non-fatal if endpoint missing)"

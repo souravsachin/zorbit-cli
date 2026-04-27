@@ -29,11 +29,13 @@ mkdir -p "$REPORT_DIR" 2>/dev/null || REPORT_DIR=/tmp
 
 [[ -z "$ENV_PREFIX" ]] && { echo "ERR: ENV_PREFIX required"; exit 1; }
 
-# locate spec files
+# locate spec files (honour explicit env override first; otherwise search the
+# canonical paths)
 locate_spec() {
-  local name="$1"
+  local name="$1" env_override="$2"
   for cand in \
-    "${PRIVS_FILE:-}" \
+    "$env_override" \
+    "/tmp/$name" \
     "/work/zorbit/02_repos/zorbit-core/platform-spec/$name" \
     "/Users/s/workspace/zorbit/02_repos/zorbit-core/platform-spec/$name" \
     "$(dirname "$0")/../../../../zorbit-core/platform-spec/$name" \
@@ -43,15 +45,18 @@ locate_spec() {
   return 1
 }
 
-PRIVS_FILE="$(locate_spec privileges-canonical.jsonl)" || { echo "ERR: privileges-canonical.jsonl not found"; exit 1; }
-SECTIONS_FILE="$(locate_spec privilege-sections-canonical.jsonl)" || { echo "ERR: privilege-sections-canonical.jsonl not found"; exit 1; }
+PRIVS_FILE="$(locate_spec privileges-canonical.jsonl "${PRIVS_FILE:-}")" || { echo "ERR: privileges-canonical.jsonl not found"; exit 1; }
+SECTIONS_FILE="$(locate_spec privilege-sections-canonical.jsonl "${SECTIONS_FILE:-}")" || { echo "ERR: privilege-sections-canonical.jsonl not found"; exit 1; }
+echo "  using PRIVS_FILE=$PRIVS_FILE"
+echo "  using SECTIONS_FILE=$SECTIONS_FILE"
 
 run_pg() {
   local sql="$1"
+  local flags="${2:-}"
   if [[ -n "$SSH_TARGET" ]]; then
-    ssh "$SSH_TARGET" "sudo docker exec -i $PG_CONTAINER psql -U zorbit -d zorbit_authorization -v ON_ERROR_STOP=1" <<<"$sql"
+    ssh "$SSH_TARGET" "sudo docker exec -i $PG_CONTAINER psql -U zorbit -d zorbit_authorization $flags -v ON_ERROR_STOP=1" <<<"$sql"
   else
-    docker exec -i "$PG_CONTAINER" psql -U zorbit -d zorbit_authorization -v ON_ERROR_STOP=1 <<<"$sql"
+    docker exec -i "$PG_CONTAINER" psql -U zorbit -d zorbit_authorization $flags -v ON_ERROR_STOP=1 <<<"$sql"
   fi
 }
 
@@ -104,7 +109,7 @@ fi
 rm -f "$tmp"
 
 # Verify count
-final=$(run_pg "SELECT COUNT(*) FROM privileges_v2;" | tail -1 | tr -d ' ')
+final=$(run_pg "SELECT COUNT(*) FROM privileges_v2;" "-tA" | tail -1 | tr -d ' ')
 echo "  privileges_v2 row count: $final"
 
 # Report

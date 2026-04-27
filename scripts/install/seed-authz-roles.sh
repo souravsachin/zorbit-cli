@@ -31,6 +31,7 @@ mkdir -p "$REPORT_DIR" 2>/dev/null || REPORT_DIR=/tmp
 locate_spec() {
   for cand in \
     "${ROLES_FILE:-}" \
+    "/tmp/roles-canonical.jsonl" \
     "/work/zorbit/02_repos/zorbit-core/platform-spec/roles-canonical.jsonl" \
     "/Users/s/workspace/zorbit/02_repos/zorbit-core/platform-spec/roles-canonical.jsonl" \
     "$(dirname "$0")/../../../../zorbit-core/platform-spec/roles-canonical.jsonl"; do
@@ -43,10 +44,11 @@ ROLES_FILE="$(locate_spec)" || { echo "ERR: roles-canonical.jsonl not found"; ex
 
 run_pg() {
   local sql="$1"
+  local flags="${2:-}"
   if [[ -n "$SSH_TARGET" ]]; then
-    ssh "$SSH_TARGET" "sudo docker exec -i $PG_CONTAINER psql -U zorbit -d zorbit_authorization -v ON_ERROR_STOP=1" <<<"$sql"
+    ssh "$SSH_TARGET" "sudo docker exec -i $PG_CONTAINER psql -U zorbit -d zorbit_authorization $flags -v ON_ERROR_STOP=1" <<<"$sql"
   else
-    docker exec -i "$PG_CONTAINER" psql -U zorbit -d zorbit_authorization -v ON_ERROR_STOP=1 <<<"$sql"
+    docker exec -i "$PG_CONTAINER" psql -U zorbit -d zorbit_authorization $flags -v ON_ERROR_STOP=1 <<<"$sql"
   fi
 }
 
@@ -76,9 +78,9 @@ ON CONFLICT DO NOTHING;
 " >/dev/null
 
 # Verify
-roles_count=$(run_pg "SELECT COUNT(*) FROM roles WHERE is_system=true;" | tail -1 | tr -d ' ')
-sa_priv_count=$(run_pg "SELECT COUNT(*) FROM role_privileges_v2 rp JOIN roles r ON r.id=rp.role_id WHERE r.\"hashId\"='R-SADMIN';" | tail -1 | tr -d ' ')
-priv_total=$(run_pg "SELECT COUNT(*) FROM privileges_v2;" | tail -1 | tr -d ' ')
+roles_count=$(run_pg "SELECT COUNT(*) FROM roles WHERE is_system=true;" "-tA" | tail -1 | tr -d ' ')
+sa_priv_count=$(run_pg "SELECT COUNT(*) FROM role_privileges_v2 rp JOIN roles r ON r.id=rp.role_id WHERE r.\"hashId\"='R-SADMIN';" "-tA" | tail -1 | tr -d ' ')
+priv_total=$(run_pg "SELECT COUNT(*) FROM privileges_v2;" "-tA" | tail -1 | tr -d ' ')
 
 echo "  system roles: $roles_count"
 echo "  R-SADMIN priv links: $sa_priv_count / $priv_total"

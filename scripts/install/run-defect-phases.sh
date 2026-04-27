@@ -67,7 +67,11 @@ if [[ -z "${ADMIN_JWT:-}" ]]; then
   pwd_hash=$(printf '%s' "${SUPER_ADMIN_PASSWORD}" | shasum -a 256 2>/dev/null | awk '{print $1}')
   [[ -z "$pwd_hash" ]] && pwd_hash=$(printf '%s' "${SUPER_ADMIN_PASSWORD}" | sha256sum | awk '{print $1}')
   login_body=$(jq -nc --arg e "$SUPER_ADMIN_EMAIL" --arg p "$pwd_hash" '{email:$e, password:$p}')
-  PUBLIC_URL="${PUBLIC_URL:-https://zorbit-${ENV_PREFIX}.onezippy.ai}"
+  case "$ENV_PREFIX" in
+    ze) ENV_HOSTNAME_SLUG=dev ;; zq) ENV_HOSTNAME_SLUG=qa ;; zd) ENV_HOSTNAME_SLUG=demo ;;
+    zu) ENV_HOSTNAME_SLUG=uat ;; zp) ENV_HOSTNAME_SLUG=prod ;; *) ENV_HOSTNAME_SLUG="$ENV_PREFIX" ;;
+  esac
+  PUBLIC_URL="${PUBLIC_URL:-https://zorbit-${ENV_HOSTNAME_SLUG}.onezippy.ai}"
   resp=$(curl -sS -m 20 -X POST "${PUBLIC_URL}/api/identity/api/v1/G/auth/login" \
     -H 'Content-Type: application/json' --data "$login_body" 2>/dev/null || echo "{}")
   ADMIN_JWT=$(echo "$resp" | jq -r '.accessToken // .access_token // .token // empty' 2>/dev/null)

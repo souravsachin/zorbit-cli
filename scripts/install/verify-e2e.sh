@@ -25,7 +25,17 @@
 set -euo pipefail
 
 ENV_PREFIX="${ENV_PREFIX:-${1:-}}"
-PUBLIC_URL="${PUBLIC_URL:-https://zorbit-${ENV_PREFIX}.onezippy.ai}"
+# Translate env-prefix → public hostname slug. ze=dev, zq=qa, zd=demo, zu=uat,
+# zp=prod. Fallback uses prefix as-is.
+case "$ENV_PREFIX" in
+  ze) ENV_HOSTNAME_SLUG=dev ;;
+  zq) ENV_HOSTNAME_SLUG=qa ;;
+  zd) ENV_HOSTNAME_SLUG=demo ;;
+  zu) ENV_HOSTNAME_SLUG=uat ;;
+  zp) ENV_HOSTNAME_SLUG=prod ;;
+  *)  ENV_HOSTNAME_SLUG="$ENV_PREFIX" ;;
+esac
+PUBLIC_URL="${PUBLIC_URL:-https://zorbit-${ENV_HOSTNAME_SLUG}.onezippy.ai}"
 SA_EMAIL="${SUPER_ADMIN_EMAIL:-${2:-}}"
 SA_PASSWORD="${SUPER_ADMIN_PASSWORD:-${3:-}}"
 REPORT_DIR="${ZORBIT_INSTALL_LOG_DIR:-/var/log/zorbit-install}"
@@ -40,14 +50,23 @@ add_result() { results+=("$1"); }
 
 # ----------- 1. Login -----------
 echo "==> [1/4] login as ${SA_EMAIL}"
-pwd_hash=$(printf '%s' "$SA_PASSWORD" | shasum -a 256 2>/dev/null | awk '{print $1}')
-[[ -z "$pwd_hash" ]] && pwd_hash=$(printf '%s' "$SA_PASSWORD" | sha256sum | awk '{print $1}')
-
-login_body=$(jq -nc --arg e "$SA_EMAIL" --arg p "$pwd_hash" '{email:$e, password:$p}')
-login_resp=$(curl -sS -m 20 -w '\n%{http_code}' \
-  -X POST "${PUBLIC_URL}/api/identity/api/v1/G/auth/login" \
-  -H 'Content-Type: application/json' \
-  --data "$login_body" 2>&1)
+# Identity service accepts cleartext password OR sha256-prehashed (SPA path).
+# Try cleartext first (server-side bcrypt); fall back to prehash.
+do_login() {
+  local pwd="$1"
+  local body=$(jq -nc --arg e "$SA_EMAIL" --arg p "$pwd" '{email:$e, password:$p}')
+  curl -sS -m 20 -w '\n%{http_code}' \
+    -X POST "${PUBLIC_URL}/api/identity/api/v1/G/auth/login" \
+    -H 'Content-Type: application/json' \
+    --data "$body" 2>&1
+}
+login_resp=$(do_login "$SA_PASSWORD")
+login_code=$(echo "$login_resp" | tail -1)
+if [[ "$login_code" != "200" && "$login_code" != "201" ]]; then
+  pwd_hash=$(printf '%s' "$SA_PASSWORD" | shasum -a 256 2>/dev/null | awk '{print $1}')
+  [[ -z "$pwd_hash" ]] && pwd_hash=$(printf '%s' "$SA_PASSWORD" | sha256sum | awk '{print $1}')
+  login_resp=$(do_login "$pwd_hash")
+fi
 login_code=$(echo "$login_resp" | tail -1)
 login_body_resp=$(echo "$login_resp" | sed '$d')
 JWT=""
