@@ -55,6 +55,15 @@ for r in "${WORKSPACE_ROOT}/02_repos"/zorbit-pfs-* \
   if [[ "$recorded" != "$SDK_VER" ]]; then
     STALE_REPOS+=("$r")
     echo "preflight-sdk-lock: STALE $(basename "$r") (lock=$recorded, sdk=$SDK_VER)"
+    continue
+  fi
+  # Even if the version matches, npm ci ALSO requires a "../zorbit-sdk-node"
+  # workspace root entry. Without it, `npm ci` aborts with "Missing X@Y from
+  # lock file". --package-lock-only doesn't materialise this entry, so we
+  # have to explicitly verify it. (qq) 2026-04-27.
+  if ! grep -q '"../zorbit-sdk-node":' "$r/package-lock.json" 2>/dev/null; then
+    STALE_REPOS+=("$r")
+    echo "preflight-sdk-lock: INCOMPLETE $(basename "$r") (lock missing '../zorbit-sdk-node' workspace entry)"
   fi
 done
 
@@ -67,16 +76,22 @@ echo "preflight-sdk-lock: ${#STALE_REPOS[@]} stale lock file(s)"
 if [[ "$FIX_MODE" != "true" ]]; then
   echo "preflight-sdk-lock: re-run with --fix to regenerate, or run:"
   for r in "${STALE_REPOS[@]}"; do
-    echo "  (cd $r && rm -rf node_modules package-lock.json && npm install --package-lock-only --no-audit --no-fund)"
+    echo "  (cd $r && rm -rf node_modules package-lock.json && npm install --no-audit --no-fund)"
   done
   exit 1
 fi
 
 echo "preflight-sdk-lock: regenerating ${#STALE_REPOS[@]} lock files..."
+# IMPORTANT: use full `npm install` (not --package-lock-only). `npm ci`
+# validates that file:.. workspace packages have a matching root entry in
+# the lock (e.g. "../zorbit-sdk-node": {name: ..., version: ...}). With
+# --package-lock-only, npm skips materialising that entry, leaving the
+# lock incomplete and `npm ci` aborting with EUSAGE "Missing X@Y from
+# lock file" at docker build time. (qq) 2026-04-27.
 for r in "${STALE_REPOS[@]}"; do
   echo "  $(basename "$r")"
   (cd "$r" && rm -rf node_modules package-lock.json && \
-    npm install --package-lock-only --no-audit --no-fund > /tmp/regen-$(basename "$r").log 2>&1) \
+    npm install --no-audit --no-fund > /tmp/regen-$(basename "$r").log 2>&1) \
     || { echo "    FAIL — see /tmp/regen-$(basename "$r").log"; exit 1; }
 done
 echo "preflight-sdk-lock: OK — regenerated"
