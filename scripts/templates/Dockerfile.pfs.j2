@@ -194,7 +194,7 @@ RUN set -eux; \
       zorbit-pfs-zmb_factory ; do \
       if [ -f "/app/${svc}/package.json" ]; then \
         echo "→ installing deps for ${svc}"; \
-        (cd "/app/${svc}" && npm ci --omit=dev --no-audit --no-fund); \
+        (cd "/app/${svc}" && npm ci --omit=dev --no-audit --no-fund --install-links=false); \
       fi; \
     done
 

@@ -82,16 +82,23 @@ if [[ "$FIX_MODE" != "true" ]]; then
 fi
 
 echo "preflight-sdk-lock: regenerating ${#STALE_REPOS[@]} lock files..."
-# IMPORTANT: use full `npm install` (not --package-lock-only). `npm ci`
-# validates that file:.. workspace packages have a matching root entry in
-# the lock (e.g. "../zorbit-sdk-node": {name: ..., version: ...}). With
-# --package-lock-only, npm skips materialising that entry, leaving the
-# lock incomplete and `npm ci` aborting with EUSAGE "Missing X@Y from
-# lock file" at docker build time. (qq) 2026-04-27.
+# IMPORTANT: use full `npm install --install-links=false` (NOT
+# --package-lock-only, NOT default --install-links=true). `npm ci`
+# validates that file:.. workspace packages have a matching root entry
+# in the lock (e.g. "../zorbit-sdk-node": {...}). Reasons each variant
+# of this command DOES NOT work:
+#   - --package-lock-only: doesn't materialise the workspace entry.
+#   - default install-links=true: COPIES the linked dep into
+#     node_modules and DROPS the workspace lock entry.
+#   - default install-links=true: lock passes preflight but `npm ci`
+#     in the docker layer aborts with EUSAGE "Missing X@Y from lock file"
+#     because the workspace entry is gone.
+# Only `npm install --install-links=false` produces a lock that satisfies
+# `npm ci` for a file:.. workspace package. (qq) 2026-04-27.
 for r in "${STALE_REPOS[@]}"; do
   echo "  $(basename "$r")"
   (cd "$r" && rm -rf node_modules package-lock.json && \
-    npm install --no-audit --no-fund > /tmp/regen-$(basename "$r").log 2>&1) \
+    npm install --install-links=false --no-audit --no-fund > /tmp/regen-$(basename "$r").log 2>&1) \
     || { echo "    FAIL — see /tmp/regen-$(basename "$r").log"; exit 1; }
 done
 echo "preflight-sdk-lock: OK — regenerated"
