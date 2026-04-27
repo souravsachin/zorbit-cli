@@ -50,7 +50,12 @@
 # =============================================================================
 set -euo pipefail
 
-REPO_ROOT="${1:-/Users/s/workspace/zorbit/02_repos}"
+# Auto-detect 02_repos relative to this script — works on laptop AND inside
+# dev-sandbox container. (qq) installer-improvement fix 2026-04-27.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"   # → 02_repos
+
+REPO_ROOT="${1:-${DEFAULT_REPO_ROOT}}"
 if [[ ! -d "${REPO_ROOT}" ]]; then
   echo "preflight: repo root not found: ${REPO_ROOT}" >&2
   exit 2

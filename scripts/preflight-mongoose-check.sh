@@ -40,9 +40,16 @@
 # =============================================================================
 set -euo pipefail
 
+# Auto-detect workspace 02_repos relative to this script — works on laptop
+# (/Users/s/workspace/zorbit/02_repos) AND inside dev-sandbox container
+# (/work/zorbit/02_repos). Hard-coded path was a (qq) installer-improvement
+# fix on 2026-04-27 — silent FAIL on dev-sandbox builds before this.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"   # → 02_repos
+
 ROOTS=("$@")
 if [[ ${#ROOTS[@]} -eq 0 ]]; then
-  ROOTS=("/Users/s/workspace/zorbit/02_repos")
+  ROOTS=("${DEFAULT_ROOT}")
 fi
 
 # Collect schema files
