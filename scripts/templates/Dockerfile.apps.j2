@@ -37,16 +37,19 @@ COPY 02_repos/zorbit-app-hi_claim_adjudication_workflow/dist                    
 COPY 02_repos/zorbit-app-hi_claim_adjudication_workflow/package.json                 /app/zorbit-app-hi_claim_adjudication_workflow/package.json
 COPY 02_repos/zorbit-app-hi_claim_adjudication_workflow/package-lock.json            /app/zorbit-app-hi_claim_adjudication_workflow/package-lock.json
 COPY 02_repos/zorbit-app-hi_claim_adjudication_workflow/zorbit-module-manifest.json  /app/zorbit-app-hi_claim_adjudication_workflow/zorbit-module-manifest.json
+COPY 02_repos/zorbit-app-hi_claim_adjudication_workflow/entities                     /app/zorbit-app-hi_claim_adjudication_workflow/entities
 
 COPY 02_repos/zorbit-app-hi_claim_decisioning/dist                         /app/zorbit-app-hi_claim_decisioning/dist
 COPY 02_repos/zorbit-app-hi_claim_decisioning/package.json                 /app/zorbit-app-hi_claim_decisioning/package.json
 COPY 02_repos/zorbit-app-hi_claim_decisioning/package-lock.json            /app/zorbit-app-hi_claim_decisioning/package-lock.json
 COPY 02_repos/zorbit-app-hi_claim_decisioning/zorbit-module-manifest.json  /app/zorbit-app-hi_claim_decisioning/zorbit-module-manifest.json
+COPY 02_repos/zorbit-app-hi_claim_decisioning/entities                     /app/zorbit-app-hi_claim_decisioning/entities
 
 COPY 02_repos/zorbit-app-hi_claim_initiation/dist                         /app/zorbit-app-hi_claim_initiation/dist
 COPY 02_repos/zorbit-app-hi_claim_initiation/package.json                 /app/zorbit-app-hi_claim_initiation/package.json
 COPY 02_repos/zorbit-app-hi_claim_initiation/package-lock.json            /app/zorbit-app-hi_claim_initiation/package-lock.json
 COPY 02_repos/zorbit-app-hi_claim_initiation/zorbit-module-manifest.json  /app/zorbit-app-hi_claim_initiation/zorbit-module-manifest.json
+COPY 02_repos/zorbit-app-hi_claim_initiation/entities                     /app/zorbit-app-hi_claim_initiation/entities
 
 COPY 02_repos/zorbit-app-hi_claim_payment_recon/dist                         /app/zorbit-app-hi_claim_payment_recon/dist
 COPY 02_repos/zorbit-app-hi_claim_payment_recon/package.json                 /app/zorbit-app-hi_claim_payment_recon/package.json
@@ -57,6 +60,7 @@ COPY 02_repos/zorbit-app-hi_customer_portal/dist                         /app/zo
 COPY 02_repos/zorbit-app-hi_customer_portal/package.json                 /app/zorbit-app-hi_customer_portal/package.json
 COPY 02_repos/zorbit-app-hi_customer_portal/package-lock.json            /app/zorbit-app-hi_customer_portal/package-lock.json
 COPY 02_repos/zorbit-app-hi_customer_portal/zorbit-module-manifest.json  /app/zorbit-app-hi_customer_portal/zorbit-module-manifest.json
+COPY 02_repos/zorbit-app-hi_customer_portal/entities                     /app/zorbit-app-hi_customer_portal/entities
 
 COPY 02_repos/zorbit-app-hi_quotation/dist                         /app/zorbit-app-hi_quotation/dist
 COPY 02_repos/zorbit-app-hi_quotation/package.json                 /app/zorbit-app-hi_quotation/package.json
@@ -77,6 +81,7 @@ COPY 02_repos/zorbit-app-hi_uw_decisioning/dist                         /app/zor
 COPY 02_repos/zorbit-app-hi_uw_decisioning/package.json                 /app/zorbit-app-hi_uw_decisioning/package.json
 COPY 02_repos/zorbit-app-hi_uw_decisioning/package-lock.json            /app/zorbit-app-hi_uw_decisioning/package-lock.json
 COPY 02_repos/zorbit-app-hi_uw_decisioning/zorbit-module-manifest.json  /app/zorbit-app-hi_uw_decisioning/zorbit-module-manifest.json
+COPY 02_repos/zorbit-app-hi_uw_decisioning/seeds                        /app/zorbit-app-hi_uw_decisioning/seeds
 
 COPY 02_repos/zorbit-app-jayna/dist                         /app/zorbit-app-jayna/dist
 COPY 02_repos/zorbit-app-jayna/package.json                 /app/zorbit-app-jayna/package.json
@@ -87,21 +92,25 @@ COPY 02_repos/zorbit-app-manufacturing_demo/dist                         /app/zo
 COPY 02_repos/zorbit-app-manufacturing_demo/package.json                 /app/zorbit-app-manufacturing_demo/package.json
 COPY 02_repos/zorbit-app-manufacturing_demo/package-lock.json            /app/zorbit-app-manufacturing_demo/package-lock.json
 COPY 02_repos/zorbit-app-manufacturing_demo/zorbit-module-manifest.json  /app/zorbit-app-manufacturing_demo/zorbit-module-manifest.json
+COPY 02_repos/zorbit-app-manufacturing_demo/entities                     /app/zorbit-app-manufacturing_demo/entities
 
 COPY 02_repos/zorbit-app-mi_quotation/dist                         /app/zorbit-app-mi_quotation/dist
 COPY 02_repos/zorbit-app-mi_quotation/package.json                 /app/zorbit-app-mi_quotation/package.json
 COPY 02_repos/zorbit-app-mi_quotation/package-lock.json            /app/zorbit-app-mi_quotation/package-lock.json
 COPY 02_repos/zorbit-app-mi_quotation/zorbit-module-manifest.json  /app/zorbit-app-mi_quotation/zorbit-module-manifest.json
+COPY 02_repos/zorbit-app-mi_quotation/entities                     /app/zorbit-app-mi_quotation/entities
 
 COPY 02_repos/zorbit-app-network_empanelment_application/dist                         /app/zorbit-app-network_empanelment_application/dist
 COPY 02_repos/zorbit-app-network_empanelment_application/package.json                 /app/zorbit-app-network_empanelment_application/package.json
 COPY 02_repos/zorbit-app-network_empanelment_application/package-lock.json            /app/zorbit-app-network_empanelment_application/package-lock.json
 COPY 02_repos/zorbit-app-network_empanelment_application/zorbit-module-manifest.json  /app/zorbit-app-network_empanelment_application/zorbit-module-manifest.json
+COPY 02_repos/zorbit-app-network_empanelment_application/entities                     /app/zorbit-app-network_empanelment_application/entities
 
 COPY 02_repos/zorbit-app-network_empanelment_workflow/dist                         /app/zorbit-app-network_empanelment_workflow/dist
 COPY 02_repos/zorbit-app-network_empanelment_workflow/package.json                 /app/zorbit-app-network_empanelment_workflow/package.json
 COPY 02_repos/zorbit-app-network_empanelment_workflow/package-lock.json            /app/zorbit-app-network_empanelment_workflow/package-lock.json
 COPY 02_repos/zorbit-app-network_empanelment_workflow/zorbit-module-manifest.json  /app/zorbit-app-network_empanelment_workflow/zorbit-module-manifest.json
+COPY 02_repos/zorbit-app-network_empanelment_workflow/entities                     /app/zorbit-app-network_empanelment_workflow/entities
 
 COPY 02_repos/zorbit-app-pcg4/dist                         /app/zorbit-app-pcg4/dist
 COPY 02_repos/zorbit-app-pcg4/package.json                 /app/zorbit-app-pcg4/package.json
@@ -126,6 +135,7 @@ COPY 02_repos/zorbit-app-retail_banking_demo/dist                         /app/z
 COPY 02_repos/zorbit-app-retail_banking_demo/package.json                 /app/zorbit-app-retail_banking_demo/package.json
 COPY 02_repos/zorbit-app-retail_banking_demo/package-lock.json            /app/zorbit-app-retail_banking_demo/package-lock.json
 COPY 02_repos/zorbit-app-retail_banking_demo/zorbit-module-manifest.json  /app/zorbit-app-retail_banking_demo/zorbit-module-manifest.json
+COPY 02_repos/zorbit-app-retail_banking_demo/entities                     /app/zorbit-app-retail_banking_demo/entities
 
 COPY 02_repos/zorbit-app-sample/dist                         /app/zorbit-app-sample/dist
 COPY 02_repos/zorbit-app-sample/package.json                 /app/zorbit-app-sample/package.json
@@ -144,11 +154,13 @@ COPY 02_repos/zorbit-app-uw_workflow/dist                         /app/zorbit-ap
 COPY 02_repos/zorbit-app-uw_workflow/package.json                 /app/zorbit-app-uw_workflow/package.json
 COPY 02_repos/zorbit-app-uw_workflow/package-lock.json            /app/zorbit-app-uw_workflow/package-lock.json
 COPY 02_repos/zorbit-app-uw_workflow/zorbit-module-manifest.json  /app/zorbit-app-uw_workflow/zorbit-module-manifest.json
+COPY 02_repos/zorbit-app-uw_workflow/seeds                        /app/zorbit-app-uw_workflow/seeds
 
 COPY 02_repos/zorbit-app-wealth_mgmt_demo/dist                         /app/zorbit-app-wealth_mgmt_demo/dist
 COPY 02_repos/zorbit-app-wealth_mgmt_demo/package.json                 /app/zorbit-app-wealth_mgmt_demo/package.json
 COPY 02_repos/zorbit-app-wealth_mgmt_demo/package-lock.json            /app/zorbit-app-wealth_mgmt_demo/package-lock.json
 COPY 02_repos/zorbit-app-wealth_mgmt_demo/zorbit-module-manifest.json  /app/zorbit-app-wealth_mgmt_demo/zorbit-module-manifest.json
+COPY 02_repos/zorbit-app-wealth_mgmt_demo/entities                     /app/zorbit-app-wealth_mgmt_demo/entities
 
 COPY 02_repos/zorbit-app-zmb_selftest/dist                         /app/zorbit-app-zmb_selftest/dist
 COPY 02_repos/zorbit-app-zmb_selftest/package.json                 /app/zorbit-app-zmb_selftest/package.json
